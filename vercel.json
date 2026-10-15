@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "bash scripts/vercel-build.sh",
+  "outputDirectory": "site",
+  "functions": {
+    "api/xray.mjs": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "{src/**,web/**,vendor/**,package.json}"
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

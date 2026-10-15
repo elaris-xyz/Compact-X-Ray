@@ -177,7 +177,9 @@ let current = null, circuitFilter = 'all';
 // host (GitHub Pages) sets window.XRAY_CONFIG = { static: '..', api: 'https://…' }: examples then
 // come pre-analysed from `static`, and live analysis goes to `api` (no api → examples only).
 const CONFIG = Object.assign({ api: '', static: '' }, window.XRAY_CONFIG || {});
-const API = CONFIG.api.replace(/\/$/, '');
+// 'same-origin': the API is served next to this page (the Vercel deployment).
+const API = CONFIG.api === 'same-origin' ? '' : CONFIG.api.replace(/\/$/, '');
+const LIVE = !CONFIG.static || !!CONFIG.api;
 const STATIC = CONFIG.static.replace(/\/$/, '');
 
 async function boot() {
@@ -216,7 +218,7 @@ async function boot() {
     showFiles();
     showEditor(); run();
   };
-  if (STATIC && !API) $('label.check').hidden = true;
+  if (!LIVE) $('label.check').hidden = true;
   // Deep link from the landing page: app/?example=<name>
   const want = new URLSearchParams(location.search).get('example');
   const opt = want && [...$('#examples').options].find((o) => o.value === want || o.value === `${want}.compact`);
@@ -271,7 +273,7 @@ async function run() {
   $('#out').innerHTML = `<div class="empty"><div><h2>Asking the compiler…</h2><div>It compiles your contract twice; this takes a few seconds.</div></div></div>`;
   try {
     const name = project.main || $('#examples').value || 'contract.compact';
-    if (STATIC && !API) {
+    if (!LIVE) {
       throw new Error('This page has no live analysis service connected. The examples above are pre-analysed; to x-ray your own contract, run the CLI or the Docker image (see the README).');
     }
     const r = await fetch(`${API}/api/xray`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source, name, deep: $('#deep').checked, files: project.others }) });

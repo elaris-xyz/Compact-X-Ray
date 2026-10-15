@@ -144,6 +144,18 @@ it marks each line where a private value goes public, shows advice as warnings, 
 above each circuit (`🩻 publishes amount (exact value) → revealedBids`), and opens the visual report
 beside the code. It calls the CLI through `bin/compact-xray`; see `vscode/README.md` for WSL setups.
 
+### The website
+
+`scripts/build-site.ts` builds a static site: a landing page, the X-Ray app, and every bundled
+example pre-analysed with the real compiler, so it works with no server.
+
+- **GitHub Pages** — `.github/workflows/pages.yml` builds it on every push to `main`; deployment runs
+  when Pages is available for the repository and the variable `PAGES_ENABLED` is `true`. Set
+  `XRAY_API` to a live endpoint to let visitors x-ray their own contracts.
+- **Vercel** (site *and* live analysis) — import the repository; `vercel.json` and
+  `scripts/vercel-build.sh` install the pinned compiler, ship `compactc.bin` to the `api/xray`
+  function, and point the app at it. No settings needed.
+
 ### Hosting it
 
 ```bash
