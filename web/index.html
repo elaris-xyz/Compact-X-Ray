@@ -105,6 +105,24 @@
   .node.ret { border-right-color: var(--faint); border-style: dashed; }
   .node.safe { opacity: .6; }
   .node.dim { opacity: .25; }
+  .node[data-k] { cursor: pointer; }
+  .node[data-k]:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .node.pinned { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pin-info { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; margin: -6px 0 18px; }
+  .pin-info > header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .pin-info > header b { font-family: var(--mono); }
+  .pin-info > header span { color: var(--muted); font-size: 13px; }
+  .pin-info > header button { margin-left: auto; padding: 2px 9px; }
+  .pin-info .flow .circ { font: 11.5px var(--mono); color: var(--faint); margin-right: 6px; }
+  .code-view .ln.sel { box-shadow: inset 3px 0 0 var(--accent); }
+  .search { display: flex; gap: 6px; align-items: center; margin: -4px 0 10px; }
+  .search input { flex: 1; min-width: 0; font: 12.5px var(--mono); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; outline: 0; }
+  .search input:focus { border-color: var(--accent); }
+  .search span { font: 12px var(--mono); color: var(--faint); min-width: 54px; text-align: right; }
+  .search button { padding: 4px 9px; }
+  .code-view mark { background: color-mix(in srgb, var(--hash) 45%, transparent); color: inherit; border-radius: 2px; }
+  .code-view mark.cur { background: var(--hash); color: #0b0b0f; }
+  .code-view:focus { outline: 0; }
   svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
   svg.wires path { fill: none; stroke-linecap: round; opacity: .85; transition: opacity .15s; }
   svg.wires path.dim { opacity: .08; }
@@ -159,9 +177,15 @@
       <button class="primary" id="run">X-ray it</button>
     </div>
     <div class="files" id="files" hidden></div>
+    <div class="search" id="search" hidden>
+      <input id="q" type="search" placeholder="Search the code   (Ctrl+F)" aria-label="Search the code" autocomplete="off" spellcheck="false">
+      <span id="qn"></span>
+      <button id="qprev" class="ghost" title="Previous match (Shift+Enter)" aria-label="Previous match">&uarr;</button>
+      <button id="qnext" class="ghost" title="Next match (Enter)" aria-label="Next match">&darr;</button>
+    </div>
     <div class="code-wrap">
       <textarea id="src" spellcheck="false" aria-label="Compact contract" placeholder="Paste a Compact contract here, or load an example."></textarea>
-      <div class="code-view" id="view" hidden></div>
+      <div class="code-view" id="view" tabindex="0" hidden></div>
     </div>
   </div>
   <div class="pane" id="out">
@@ -186,7 +210,24 @@ const API = CONFIG.api === 'same-origin' ? '' : CONFIG.api.replace(/\/$/, '');
 const LIVE = !CONFIG.static || !!CONFIG.api;
 const STATIC = CONFIG.static.replace(/\/$/, '');
 
+function wireSearch() {
+  const q = $('#q');
+  let timer;
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => runSearch(q.value), 120); });
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+    if (e.key === 'Escape') { q.value = ''; runSearch(''); $('#view').focus(); }
+  });
+  $('#qnext').onclick = () => step(1);
+  $('#qprev').onclick = () => step(-1);
+  // Ctrl+F inside the code panel searches the code; elsewhere the browser's own find still works.
+  $('#editorPane').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('#search').hidden) { e.preventDefault(); q.focus(); q.select(); }
+  });
+}
+
 async function boot() {
+  wireSearch();
   if (window.__XRAY__) {   // standalone report: the result is embedded, there is no server
     current = window.__XRAY__;
     for (const id of ['#examples', '#run', '#edit', '#open', 'label.check']) $(id).hidden = true;
@@ -268,7 +309,7 @@ function showResult(x) {
   render();
 }
 
-function showEditor() { $('#view').hidden = true; $('#src').hidden = false; $('#edit').hidden = true; }
+function showEditor() { $('#view').hidden = true; $('#src').hidden = false; $('#edit').hidden = true; $('#search').hidden = true; }
 
 async function run() {
   const source = $('#src').value;
@@ -355,6 +396,7 @@ function render() {
       </div>
       <svg class="wires" id="wires"></svg>
     </div>
+    <div class="pin-info" id="pinInfo" hidden></div>
     ${x.advice.length ? `<section><h2>Advice</h2>${x.advice.map((a) => `<div class="advice ${a.severity}"><b>${md(a.title)}</b><p>${md(a.detail)}</p>${a.lines.length ? `<div class="l" data-lines="${a.lines.join(',')}">line ${a.lines.join(', ')}</div>` : ''}</div>`).join('')}</section>` : ''}
     <section><h2>What becomes public, circuit by circuit</h2>${circuitsHtml(x, leaks)}</section>
     ${stays.length ? `<section><h2>Stays private</h2><div class="private-list">${stays.map((s) => `<span>✓ ${esc(s)}</span>`).join('')}</div>
@@ -372,10 +414,50 @@ function render() {
   current._flows = [...flows.values()];
   requestAnimationFrame(drawWires);
   for (const n of document.querySelectorAll('#map .node[data-k]')) {
+    n.title = 'Click to pin: lists every disclosure through it and marks its lines in the code';
     n.onmouseenter = () => highlight(n.dataset.k);
-    n.onmouseleave = () => highlight(null);
+    n.onmouseleave = () => highlight(pinned);
+    n.onclick = () => pin(pinned === n.dataset.k ? null : n.dataset.k, n);
   }
+  if (pinned && !$(`#map .node[data-k="${CSS.escape(pinned)}"]`)) pinned = null;   // not shown under this filter
+  requestAnimationFrame(() => pin(pinned));
+  if ($('#q').value) runSearch($('#q').value, false);
 }
+
+// --- Pinning a node of the map --------------------------------------------------------------------
+let pinned = null;
+
+function pin(k, anchor) {
+  pinned = k;
+  for (const n of document.querySelectorAll('#map .node')) n.classList.toggle('pinned', !!k && n.dataset.k === k);
+  highlight(k);
+  for (const el of document.querySelectorAll('.ln.sel')) el.classList.remove('sel');
+  const box = $('#pinInfo');
+  if (!box) return;
+  if (!k) { box.hidden = true; box.innerHTML = ''; return; }
+  const leaks = current.leaks.filter((l) => (circuitFilter === 'all' || l.circuit === circuitFilter) && (srcKey(l) === k || sinkKey(l) === k));
+  const groups = new Map();
+  for (const l of leaks) {
+    const key = `${l.circuit}|${srcKey(l)}|${sinkKey(l)}|${l.exposure}|${l.sink.reveals || ''}`;
+    const g = groups.get(key) || { l, lines: new Set() };
+    g.lines.add(l.sink.line);
+    groups.set(key, g);
+  }
+  const node = $(`#map .node[data-k="${CSS.escape(k)}"]`);
+  const name = node ? node.firstChild.textContent.trim() : k;
+  const lines = [...new Set(leaks.map((l) => l.sink.line))].sort((a, b) => a - b);
+  const circuits = new Set(leaks.map((l) => l.circuit));
+  box.innerHTML = `<header><b>${esc(name)}</b><span>${leaks.length} disclosure${leaks.length === 1 ? '' : 's'} · ${circuits.size} circuit${circuits.size === 1 ? '' : 's'} · line${lines.length === 1 ? '' : 's'} ${lines.join(', ')}</span><button class="ghost" id="unpin" title="Unpin (Esc)" aria-label="Unpin">✕</button></header>`
+    + [...groups.values()].sort((a, b) => RANK[a.l.exposure] - RANK[b.l.exposure]).map(({ l, lines: ls }) => flowRow(l, ls, true)).join('');
+  box.hidden = false;
+  $('#unpin').onclick = () => pin(null);
+  for (const n of lines) document.getElementById('L' + n)?.classList.add('sel');
+  if (anchor && lines.length) focusLines(lines, anchor);
+}
+
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pinned && document.activeElement !== $('#q')) pin(null);
+});
 
 function download(name, text, type) {
   const a = document.createElement('a');
@@ -405,6 +487,14 @@ function plainHtml(x) {
 
 function md(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>'); }
 
+// One disclosure row (used per circuit, and in the panel of a pinned map node).
+function flowRow(l, lines, showCircuit = false) {
+  const where = l.sink.kind === 'stdlib' ? `${l.sink.call}() — reveals ${l.sink.reveals}` : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)' : `ledger <code>${esc(l.sink.field || '?')}</code>`;
+  const steps = (l.path || []).filter((p) => p.at);
+  const trail = steps.length > 1 ? `<div class="trail">${steps.map((p) => `<span data-l="${p.at.line}">${esc(p.step.replace(/^the /, ''))} <i>L${p.at.line}</i></span>`).join('<b>→</b>')}</div>` : '';
+  return `<div class="flow" data-lines="${[...lines].join(',')}"><span class="what">${showCircuit ? `<span class="circ">${esc(l.circuit)}</span>` : ''}${esc(srcLabel(l))}</span><span class="where">→ ${l.sink.kind === 'stdlib' ? esc(where) : where}<span class="pill ${l.exposure}">${WORDS[l.exposure]}</span></span><span class="lines">L${[...lines].join(', L')}</span>${trail}</div>`;
+}
+
 function circuitsHtml(x, leaks) {
   const shown = x.circuits.filter((c) => (c.exported || c.leaks) && (circuitFilter === 'all' || c.name === circuitFilter));
   return shown.map((c) => {
@@ -415,12 +505,7 @@ function circuitsHtml(x, leaks) {
       const g = groups.get(k) || { l, lines: new Set() };
       g.lines.add(l.sink.line); groups.set(k, g);
     }
-    const rows = [...groups.values()].sort((a, b) => RANK[a.l.exposure] - RANK[b.l.exposure]).map(({ l, lines }) => {
-      const where = l.sink.kind === 'stdlib' ? `${l.sink.call}() — reveals ${l.sink.reveals}` : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)' : `ledger <code>${esc(l.sink.field || '?')}</code>`;
-      const steps = (l.path || []).filter((p) => p.at);
-      const trail = steps.length > 1 ? `<div class="trail">${steps.map((p) => `<span data-l="${p.at.line}">${esc(p.step.replace(/^the /, ''))} <i>L${p.at.line}</i></span>`).join('<b>→</b>')}</div>` : '';
-      return `<div class="flow" data-lines="${[...lines].join(',')}"><span class="what">${esc(srcLabel(l))}</span><span class="where">→ ${l.sink.kind === 'stdlib' ? esc(where) : where}<span class="pill ${l.exposure}">${WORDS[l.exposure]}</span></span><span class="lines">L${[...lines].join(', L')}</span>${trail}</div>`;
-    }).join('');
+    const rows = [...groups.values()].sort((a, b) => RANK[a.l.exposure] - RANK[b.l.exposure]).map(({ l, lines }) => flowRow(l, lines)).join('');
     return `<div class="circuit"><header>${esc(c.name)}<span>${c.exported ? (c.pure ? 'pure' : '') : 'helper — runs inside the circuits that call it'}</span></header>${rows || '<div class="none">✓ nothing private reaches the public side</div>'}</div>`;
   }).join('');
 }
@@ -436,6 +521,52 @@ function showCode(x, leaks) {
   $('#view').innerHTML = x.source.split('\n').map((t, i) =>
     `<div class="ln ${marks.has(i + 1) ? 'mark-' + marks.get(i + 1) : ''} ${extra.has(i + 1) ? 'extra' : ''}" id="L${i + 1}"><span class="n">${i + 1}</span><span><span class="t">${esc(t) || ' '}</span>${extra.has(i + 1) ? '<span class="tag">disclose() not required</span>' : ''}</span></div>`).join('');
   $('#view').hidden = false; $('#src').hidden = true; $('#edit').hidden = !!window.__XRAY__;
+  $('#search').hidden = false; hits = []; hit = -1;
+}
+
+// --- Search in the code view ----------------------------------------------------------------------
+let hits = [], hit = -1;
+
+function runSearch(term, move = true) {
+  const view = $('#view');
+  // Put back every line's plain text, then mark the matches.
+  for (const t of view.querySelectorAll('.t')) if (t.dataset.raw !== undefined) t.textContent = t.dataset.raw;
+  hits = []; hit = -1;
+  const q = term.toLowerCase();
+  if (q) {
+    for (const t of view.querySelectorAll('.t')) {
+      const raw = t.dataset.raw ?? t.textContent;
+      t.dataset.raw = raw;
+      const low = raw.toLowerCase();
+      if (!low.includes(q)) continue;
+      let html = '', i = 0, j;
+      while ((j = low.indexOf(q, i)) >= 0) { html += esc(raw.slice(i, j)) + `<mark>${esc(raw.slice(j, j + q.length))}</mark>`; i = j + q.length; }
+      t.innerHTML = html + esc(raw.slice(i));
+      hits.push(...t.querySelectorAll('mark'));
+    }
+  }
+  $('#qn').textContent = q ? (hits.length ? `0/${hits.length}` : 'no match') : '';
+  if (hits.length && move) step(1);
+}
+
+function step(d) {
+  if (!hits.length) return;
+  hits[hit]?.classList.remove('cur');
+  hit = (hit + d + hits.length) % hits.length;
+  const m = hits[hit];
+  m.classList.add('cur');
+  $('#qn').textContent = `${hit + 1}/${hits.length}`;
+  scrollCodeTo(m.closest('.ln'));
+}
+
+// Bring a code line into the on-screen part of the code view, at height wantY, without moving the page.
+function scrollCodeTo(el, wantY) {
+  const view = $('#view');
+  const vr = view.getBoundingClientRect();
+  const top = Math.max(vr.top, 0), bottom = Math.min(vr.bottom, innerHeight);
+  if (bottom - top < 60) { el.scrollIntoView({ block: 'center' }); return; }
+  const want = Math.min(Math.max(wantY ?? (top + bottom) / 2, top + 20), bottom - 40);
+  view.scrollTop = el.offsetTop - (want - vr.top);
 }
 
 // Highlight lines in the code view. With an anchor (the finding that was clicked), scroll only the
@@ -448,11 +579,8 @@ function focusLines(lines, anchor) {
     if (!el) return;
     el.classList.add('focus');
     if (i) return;
-    const vr = view.getBoundingClientRect();
-    const onScreenTop = Math.max(vr.top, 0), onScreenBottom = Math.min(vr.bottom, innerHeight);
-    if (anchor && !view.hidden && onScreenBottom - onScreenTop > 60) {
-      const want = Math.min(Math.max(anchor.getBoundingClientRect().top, onScreenTop + 20), onScreenBottom - 40);
-      view.scrollTop = el.offsetTop - (want - vr.top);   // instant: the pulse on the line shows where it went
+    if (anchor && !view.hidden) {
+      scrollCodeTo(el, anchor.getBoundingClientRect().top);   // instant: the pulse on the line shows where it went
     } else {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
