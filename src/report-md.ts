@@ -22,6 +22,12 @@ export function renderMarkdown(x: Xray, opts: { check?: PolicyCheck; diff?: Diff
   out.push(`### 🩻 Compact X-Ray — \`${name}\``);
   out.push(`${status} · ${x.leaks.length} disclosure point(s) · compiler \`${x.compiler}\`${x.pragma ? ` · language \`${x.pragma}\`` : ''}`);
   out.push('');
+  if (!x.compiles) {
+    out.push('The contract must compile before anything can be said about what it makes public:');
+    out.push('');
+    for (const p of x.compileProblems ?? []) out.push(`- ${p.line ? `line ${p.line}: ` : ''}${p.message}`);
+    return out.join('\n');
+  }
 
   if (opts.check?.unexpected.length) {
     out.push('**New or unapproved disclosures** — add them to `.xray.json` if intended:');

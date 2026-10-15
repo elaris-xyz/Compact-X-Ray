@@ -32,6 +32,8 @@ export type Xray = {
   compiler: string;
   compiles: boolean;
   compileErrors: string[];
+  /** Where the compiler stopped, when the contract does not compile. */
+  compileProblems: { line: number; char: number; message: string }[];
   pragma: string | null;
   ledger: SourceModel['ledger'];
   witnesses: SourceModel['witnesses'];
@@ -78,6 +80,17 @@ function typeOf(model: SourceModel, src: DisclosureSource): string | undefined {
     return c ? paramTypes(c.params)[src.name] : undefined;
   }
   return undefined;
+}
+
+/** "Exception: c.compact line 84 char 86:\n  parse error: …" → { line, char, message }. */
+function compileProblems(output: string): Xray['compileProblems'] {
+  const out: Xray['compileProblems'] = [];
+  for (const block of output.split(/^(?=Exception: )/m)) {
+    const m = /^Exception: .*?line (\d+) char (\d+):\s*([\s\S]*)$/.exec(block.trim());
+    if (m) out.push({ line: Number(m[1]), char: Number(m[2]), message: m[3]!.replace(/\s+/g, ' ').trim() });
+    else if (block.trim()) out.push({ line: 0, char: 0, message: block.replace(/\s+/g, ' ').trim().slice(0, 300) });
+  }
+  return out;
 }
 
 export type XrayOptions = { deep?: boolean; concurrency?: number };
@@ -237,6 +250,7 @@ export async function xrayFile(file: string, opts: XrayOptions = {}): Promise<Xr
     compileErrors: original.ok ? [] : parseCompilerReport(original.output).otherErrors.concat(
       parseCompilerReport(original.output).disclosures.length ? ['(undeclared disclosures, see leaks)'] : [],
     ),
+    compileProblems: original.ok ? [] : compileProblems(original.output),
     pragma: model.pragma,
     ledger: model.ledger,
     witnesses: model.witnesses,

@@ -1,6 +1,6 @@
 {
   "name": "compact-xray",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "See what a Midnight Compact contract makes public, and what stays private — straight from the compiler.",
   "license": "Apache-2.0",
   "type": "module",

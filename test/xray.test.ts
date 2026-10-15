@@ -60,3 +60,24 @@ test('plain-language summary', async () => {
   assert.match(reveal.text, /anyone watching the chain learns .*the exact `amount` in `revealed`/);
   assert.equal(lines.find((l) => l.circuit === 'peek')?.tone, 'caller');
 });
+
+test('a contract that does not compile: the error with its line, and no claims', async () => {
+  const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { explain } = await import('../src/explain.ts');
+  const { renderText } = await import('../src/report-text.ts');
+  const dir = mkdtempSync(path.join(tmpdir(), 'xray-broken-'));
+  const file = path.join(dir, 'broken.compact');
+  // What copying from a page that put an annotation inside the code did to a real user.
+  const lines = readFileSync(fixture, 'utf8').split('\n');
+  lines[27] += 'disclose() not required';
+  writeFileSync(file, lines.join('\n'));
+  const b = await xrayFile(file);
+  assert.equal(b.compiles, false);
+  assert.equal(b.compileProblems[0]?.line, 28);
+  assert.match(b.compileProblems[0]!.message, /parse error/);
+  assert.deepEqual(explain(b), []);
+  const text = renderText(b);
+  assert.match(text, /line 28/);
+  assert.doesNotMatch(text, /nothing private|STAYS PRIVATE/);
+});

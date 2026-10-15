@@ -29,6 +29,7 @@ export type Sentence = { circuit: string; text: string; tone: 'private' | 'publi
 
 export function explain(x: Xray): Sentence[] {
   const out: Sentence[] = [];
+  if (!x.compiles) return out; // no analysis ran: claiming "nothing is published" would be false
   const shown = x.circuits.filter((c) => c.exported || c.leaks);
   for (const c of shown) {
     const mine = x.leaks.filter((l) => l.circuit === c.name);

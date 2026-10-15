@@ -79,7 +79,15 @@
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
   .actions button { font-size: 12.5px; padding: 5px 10px; }
   .code-view .ln.extra .t { text-decoration: underline wavy var(--faint); text-underline-offset: 4px; }
-  .code-view .ln .tag { color: var(--faint); font-family: var(--sans); font-size: 11px; margin-left: 10px; }
+  /* Annotations are pseudo-elements so that copying the code never copies them. */
+  .code-view .ln[data-tag]::after { content: attr(data-tag); color: var(--faint); font-family: var(--sans); font-size: 11px; margin-left: 10px; white-space: nowrap; }
+  .code-view .ln.broken { background: color-mix(in srgb, var(--value) 22%, transparent); }
+  .code-view .ln.broken[data-tag]::after { color: var(--value); }
+  .broken-box { border: 1px solid var(--value); border-radius: 12px; background: var(--panel); padding: 16px 18px; }
+  .broken-box h2 { margin: 0 0 6px; color: var(--value); font-size: 17px; }
+  .broken-box p { color: var(--muted); margin: 0 0 12px; }
+  .broken-box .err { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font: 12.5px var(--mono); padding: 8px 10px; border-radius: 8px; background: var(--panel-2); cursor: pointer; margin-bottom: 6px; }
+  .broken-box .err b { color: var(--value); font-weight: 600; }
   .empty { display: grid; place-items: center; height: 60vh; color: var(--muted); text-align: center; }
   .empty h2 { color: var(--text); margin: 0 0 6px; font-size: 20px; }
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
@@ -340,6 +348,7 @@ function argNames(params) { return [...params.matchAll(/([A-Za-z_]\w*)\s*:/g)].m
 function render() {
   const x = current;
   document.body.classList.add('has-result');
+  if (!x.compiles) return renderBroken(x);
   const leaks = x.leaks.filter((l) => circuitFilter === 'all' || l.circuit === circuitFilter);
   const warnings = x.advice.filter((a) => a.severity === 'warning').length;
   const exported = x.circuits.filter((c) => c.exported);
@@ -366,7 +375,6 @@ function render() {
   const quietFields = x.ledger.filter((fd) => ![...sinks.keys()].includes(`f:${fd.name}`));
 
   $('#out').innerHTML = `
-    ${x.compiles ? '' : `<div class="advice warning"><b>The contract does not compile as written</b><p>${esc(x.compileErrors.join('\n').slice(0, 1500))}</p></div>`}
     <div class="cards">
       <div class="card"><div class="k">Public ledger fields</div><div class="v">${x.ledger.length}</div></div>
       <div class="card"><div class="k">Private inputs</div><div class="v">${inputs}</div></div>
@@ -487,6 +495,22 @@ function plainHtml(x) {
 
 function md(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>'); }
 
+// A contract the compiler rejects: say so, point at the line, and claim nothing else.
+function renderBroken(x) {
+  const problems = (x.compileProblems && x.compileProblems.length) ? x.compileProblems
+    : (x.compileErrors || []).map((e) => { const m = /line (\d+) char (\d+):\s*([\s\S]*)/.exec(e); return m ? { line: +m[1], char: +m[2], message: m[3].replace(/\s+/g, ' ') } : { line: 0, char: 0, message: e }; });
+  $('#out').innerHTML = `<div class="broken-box"><h2>This contract does not compile</h2>
+    <p>Compact X-Ray needs a contract the compiler accepts: until then nothing can be said about what it makes public. Fix the line below and run it again.</p>
+    ${problems.map((p) => `<div class="err" ${p.line ? `data-lines="${p.line}"` : ''}><b>${p.line ? `line ${p.line}:${p.char}` : 'error'}</b><span>${esc(p.message)}</span></div>`).join('')}</div>`;
+  showCode(x, []);
+  for (const p of problems) {
+    const el = p.line && document.getElementById('L' + p.line);
+    if (el) { el.classList.add('broken'); el.dataset.tag = `← ${p.message.split(':')[0]}`; }
+  }
+  for (const el of document.querySelectorAll('#out [data-lines]')) el.onclick = () => focusLines(el.dataset.lines.split(',').map(Number), el);
+  if (problems[0]?.line) focusLines([problems[0].line]);
+}
+
 // One disclosure row (used per circuit, and in the panel of a pinned map node).
 function flowRow(l, lines, showCircuit = false) {
   const where = l.sink.kind === 'stdlib' ? `${l.sink.call}() — reveals ${l.sink.reveals}` : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)' : `ledger <code>${esc(l.sink.field || '?')}</code>`;
@@ -519,7 +543,7 @@ function showCode(x, leaks) {
   // With "check every disclose()": lines whose disclose() the compiler does not require.
   const extra = new Set((x.discloses || []).filter((d) => !d.needed).map((d) => d.line));
   $('#view').innerHTML = x.source.split('\n').map((t, i) =>
-    `<div class="ln ${marks.has(i + 1) ? 'mark-' + marks.get(i + 1) : ''} ${extra.has(i + 1) ? 'extra' : ''}" id="L${i + 1}"><span class="n">${i + 1}</span><span><span class="t">${esc(t) || ' '}</span>${extra.has(i + 1) ? '<span class="tag">disclose() not required</span>' : ''}</span></div>`).join('');
+    `<div class="ln ${marks.has(i + 1) ? 'mark-' + marks.get(i + 1) : ''} ${extra.has(i + 1) ? 'extra' : ''}" id="L${i + 1}"${extra.has(i + 1) ? ' data-tag="disclose() not required"' : ''}><span class="n">${i + 1}</span><span class="t">${esc(t) || ' '}</span></div>`).join('');
   $('#view').hidden = false; $('#src').hidden = true; $('#edit').hidden = !!window.__XRAY__;
   $('#search').hidden = false; hits = []; hit = -1;
 }

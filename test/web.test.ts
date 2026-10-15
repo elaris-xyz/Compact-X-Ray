@@ -22,7 +22,7 @@ test('the web UI script compiles as the browser will split it', () => {
 
 test('a standalone report embeds data that cannot close the script early', () => {
   const html = renderHtml({
-    file: 'c.compact', compiler: '0.31.1', compiles: true, compileErrors: [], pragma: '0.23',
+    file: 'c.compact', compiler: '0.31.1', compiles: true, compileErrors: [], compileProblems: [], pragma: '0.23',
     ledger: [], witnesses: [], circuits: [], leaks: [], discloses: [], advice: [],
     source: '// a comment with </script><script>alert(1)</script> in it',
   });

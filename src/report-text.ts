@@ -26,8 +26,10 @@ export function renderText(x: Xray, extra: { check?: PolicyCheck; diff?: Diff } 
 
   say(bold(`Compact X-Ray — ${path.basename(x.file)}`) + dim(`   compiler ${x.compiler}${x.pragma ? `, language ${x.pragma}` : ''}`));
   if (!x.compiles) {
-    say(red('  ✗ does not compile as written:'));
-    for (const e of x.compileErrors.slice(0, 5)) for (const l of e.split('\n').slice(0, 4)) say(dim(`    ${l}`));
+    say(red('  ✗ does not compile — fix this first; nothing below can be known until it does:'));
+    for (const p of (x.compileProblems ?? []).slice(0, 5)) say(`    ${p.line ? `line ${p.line}:${p.char}  ` : ''}${p.message}`);
+    if (!(x.compileProblems ?? []).length) for (const e of x.compileErrors.slice(0, 5)) say(dim(`    ${e.split('\n')[0]}`));
+    return out.join('\n');
   }
   say();
 

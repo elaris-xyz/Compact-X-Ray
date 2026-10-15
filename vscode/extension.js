@@ -146,7 +146,15 @@ function lineRange(doc, line) {
 function publish(doc, x, diagnostics) {
   const out = [];
   if (!x.compiles) {
-    out.push(new vscode.Diagnostic(lineRange(doc, 1), `Compact X-Ray: the contract does not compile. ${(x.compileErrors[0] || '').split('\n')[0]}`, vscode.DiagnosticSeverity.Error));
+    // No analysis ran: report only where the compiler stopped.
+    const problems = (x.compileProblems && x.compileProblems.length) ? x.compileProblems : [{ line: 1, char: 1, message: (x.compileErrors[0] || '').split('\n')[0] }];
+    for (const p of problems) {
+      const d = new vscode.Diagnostic(lineRange(doc, p.line || 1), `Compact X-Ray: the contract does not compile — ${p.message}`, vscode.DiagnosticSeverity.Error);
+      d.source = 'compact-xray';
+      out.push(d);
+    }
+    diagnostics.set(doc.uri, out);
+    return;
   }
   if (cfg().get('showDisclosures')) {
     const seen = new Set();
@@ -177,7 +185,7 @@ class Lenses {
   constructor() { this.changed = new vscode.EventEmitter(); this.onDidChangeCodeLenses = this.changed.event; }
   provideCodeLenses(doc) {
     const x = results.get(doc.uri.toString());
-    if (!x || !cfg().get('codeLens')) return [];
+    if (!x || !x.compiles || !cfg().get('codeLens')) return [];
     return x.circuits.filter((c) => c.exported || c.leaks).map((c) => {
       const mine = x.leaks.filter((l) => l.circuit === c.name && l.sink.kind !== 'return');
       const parts = [...new Set(mine.map((l) => `${l.source.name} (${WORD[l.exposure]}) → ${l.sink.kind === 'stdlib' ? `${l.sink.call}()` : l.sink.field}`))];
@@ -197,7 +205,8 @@ async function analyze(doc, ctx, deep = false) {
     publish(doc, x, ctx.diagnostics);
     ctx.lenses.changed.fire();
     const warnings = x.advice.filter((a) => a.severity === 'warning').length;
-    ctx.status.text = `$(eye) X-Ray: ${x.leaks.length} disclosure${x.leaks.length === 1 ? '' : 's'}${warnings ? `, $(warning) ${warnings}` : ''}`;
+    ctx.status.text = !x.compiles ? '$(error) X-Ray: does not compile'
+      : `$(eye) X-Ray: ${x.leaks.length} disclosure${x.leaks.length === 1 ? '' : 's'}${warnings ? `, $(warning) ${warnings}` : ''}`;
     ctx.status.tooltip = `Compact X-Ray (${localWorks ? 'local compiler' : 'online'}) — click for the visual report`;
     return x;
   } catch (e) {
