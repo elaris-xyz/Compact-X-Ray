@@ -2,6 +2,10 @@
 
 **See what a Midnight smart contract makes public — and what stays private — straight from the compiler.**
 
+**Try it:** [compact-x-ray.vercel.app](https://compact-x-ray.vercel.app/) ·
+[elaris-xyz.github.io/Compact-X-Ray](https://elaris-xyz.github.io/Compact-X-Ray/) — paste a contract, or open one of the
+official examples.
+
 On Midnight, a Compact contract mixes private data (witnesses, circuit arguments) with public
 ledger state. The line between them is `disclose()`, and it is easy to get wrong: a map key, a
 branch on a secret, or a hash of a 4-digit PIN all make information public in ways that are not
