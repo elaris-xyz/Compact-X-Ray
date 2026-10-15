@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Compact",
+  "scopeName": "source.compact",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "name": "keyword.other.disclose.compact", "match": "\\bdisclose\\b" },
+    { "name": "keyword.control.compact", "match": "\\b(if|else|for|of|return|assert|const)\\b" },
+    { "name": "storage.type.compact", "match": "\\b(circuit|witness|ledger|constructor|struct|enum|module|contract|type)\\b" },
+    { "name": "storage.modifier.compact", "match": "\\b(export|sealed|pure|import|include|prefix|pragma|language_version)\\b" },
+    { "name": "support.type.compact", "match": "\\b(Boolean|Field|Uint|Bytes|Vector|Opaque|Maybe|Either|Counter|Cell|Set|Map|List|MerkleTree|HistoricMerkleTree|ContractAddress|UserAddress|ZswapCoinPublicKey|JubjubPoint|QualifiedShieldedCoinInfo|ShieldedCoinInfo)\\b" },
+    { "name": "constant.language.compact", "match": "\\b(true|false|default)\\b" },
+    { "name": "constant.numeric.compact", "match": "\\b\\d+(\\.\\.\\d+)?\\b" },
+    { "name": "entity.name.function.compact", "match": "\\b[A-Za-z_]\\w*(?=\\s*(<[^()]*>)?\\s*\\()" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.compact", "match": "//.*$" },
+        { "name": "comment.block.compact", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.compact",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.compact", "match": "\\\\." }]
+    }
+  }
+}

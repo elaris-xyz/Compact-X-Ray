@@ -2,7 +2,7 @@
   "name": "compact-xray",
   "displayName": "Compact X-Ray",
   "description": "See, line by line, what a Midnight Compact contract makes public — from the compiler itself. Works out of the box (online), or with your local compiler.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "compact-xray",
   "license": "Apache-2.0",
   "engines": {
@@ -21,6 +21,7 @@
   ],
   "main": "./extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onLanguage:compact",
     "workspaceContains:**/*.compact"
   ],
@@ -90,9 +91,35 @@
           "type": "boolean",
           "default": true,
           "description": "Show what each circuit publishes above its declaration."
+        },
+        "compactXray.runOnType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also analyze unsaved contracts (e.g. pasted into an Untitled tab) a moment after you stop typing."
         }
       }
-    }
+    },
+    "languages": [
+      {
+        "id": "compact",
+        "aliases": [
+          "Compact",
+          "compact"
+        ],
+        "extensions": [
+          ".compact"
+        ],
+        "firstLine": "^\\s*(pragma\\s+language_version|//.*Compact)",
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "compact",
+        "scopeName": "source.compact",
+        "path": "./syntaxes/compact.tmLanguage.json"
+      }
+    ]
   },
   "repository": {
     "type": "git",

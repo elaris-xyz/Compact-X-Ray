@@ -42,6 +42,7 @@ const fakeVscode = {
       return { set: (u: { toString(): string }, d: Diagnostic[]) => m.set(u.toString(), d), delete: () => undefined, dispose() {} };
     },
     registerCodeLensProvider: (_: unknown, p: typeof lens) => { lens = p; return { dispose() {} }; },
+    setTextDocumentLanguage: async (d: { languageId: string }, id: string) => { d.languageId = id; return d; },
   },
   window: {
     activeTextEditor: undefined as unknown,
@@ -49,6 +50,7 @@ const fakeVscode = {
     createWebviewPanel: () => { const w = { webview: { html: '' } }; webviews.push(w.webview); return w; },
     showErrorMessage: (m: string) => { throw new Error(`extension reported: ${m}`); },
     showInformationMessage: async (m: string) => { asked.push(m); return 'Allow'; },
+    onDidChangeActiveTextEditor: () => ({ dispose() {} }),
   },
   commands: { registerCommand: (id: string, fn: () => Promise<unknown>) => { commands.set(id, fn); return { dispose() {} }; } },
   workspace: {
@@ -57,6 +59,8 @@ const fakeVscode = {
     onDidSaveTextDocument: () => ({ dispose() {} }),
     onDidCloseTextDocument: () => ({ dispose() {} }),
     onDidChangeConfiguration: () => ({ dispose() {} }),
+    onDidOpenTextDocument: () => ({ dispose() {} }),
+    onDidChangeTextDocument: () => ({ dispose() {} }),
   },
 };
 
@@ -125,4 +129,27 @@ test('the visual report embeds the result in the bundled page', async () => {
   const html = webviews.at(-1)!.html;
   assert.match(html, /window\.__XRAY__ = /);
   assert.match(html, /"file":"bid\.compact"/);
+});
+
+test('a contract pasted into an Untitled tab is recognised and analysed, with either engine', async () => {
+  const untitled = {
+    ...doc,
+    fileName: 'Untitled-1',
+    isUntitled: true,
+    languageId: 'plaintext',
+    uri: { scheme: 'untitled', toString: () => 'untitled:Untitled-1' },
+  };
+  const ext2 = ext as unknown as { _test: { isCompact(d: unknown): boolean } };
+  assert.equal(ext2._test.isCompact(untitled), true);
+  assert.equal(ext2._test.isCompact({ ...untitled, getText: () => 'hello world' }), false);
+  fakeVscode.window.activeTextEditor = { document: untitled };
+  for (const engine of ['online', 'local']) {
+    settings.engine = engine;
+    ext._test.resetEngine();
+    await commands.get('compactXray.analyze')!();
+    const diags = collections[0]!.get('untitled:Untitled-1')!;
+    assert.ok(diags?.some((d) => d.message.startsWith('Public: amount → revealed (exact value)')), engine);
+    collections[0]!.delete('untitled:Untitled-1');
+  }
+  fakeVscode.window.activeTextEditor = { document: doc };
 });

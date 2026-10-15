@@ -11,12 +11,22 @@
 'use strict';
 const vscode = require('vscode');
 const { exec } = require('node:child_process');
+const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 
 const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' };
 const results = new Map(); // uri -> x-ray result
 let localWorks; // undefined until probed
+
+/** A Compact contract: a .compact file, the compact language, or text that declares a language version
+ *  (e.g. a contract pasted into an Untitled tab). */
+function isCompact(doc) {
+  if (!doc) return false;
+  if (doc.fileName.endsWith('.compact') || doc.languageId === 'compact') return true;
+  if (doc.uri && doc.uri.scheme && !['file', 'untitled'].includes(doc.uri.scheme)) return false;
+  return /\bpragma\s+language_version\b/.test(doc.getText().slice(0, 20000));
+}
 
 function cfg() {
   return vscode.workspace.getConfiguration('compactXray');
@@ -70,6 +80,7 @@ async function onlineAllowed(ctx) {
 
 /** The contract and the other .compact files next to it (it may import them). */
 function projectFiles(doc) {
+  if (doc.isUntitled) return { main: { name: 'contract.compact', source: doc.getText() }, others: [] };
   const dir = path.dirname(doc.fileName);
   const open = new Map(vscode.workspace.textDocuments.map((d) => [d.fileName, d.getText()]));
   const others = [];
@@ -98,9 +109,20 @@ async function xrayOnline(doc, deep) {
 
 async function xray(doc, ctx, deep = false) {
   if ((await engine(ctx)) === 'local') {
-    const args = [toCliPath(doc.fileName), '--format', 'json'];
-    if (deep) args.push('--deep');
-    return { ...JSON.parse(await runCli(args)), source: doc.getText() };
+    // The CLI reads files: an unsaved contract goes through a temporary copy.
+    let file = doc.fileName, tmp;
+    if (doc.isUntitled || !doc.fileName.endsWith('.compact')) {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xray-vscode-'));
+      file = path.join(tmp, 'contract.compact');
+      fs.writeFileSync(file, doc.getText());
+    }
+    try {
+      const args = [toCliPath(file), '--format', 'json'];
+      if (deep) args.push('--deep');
+      return { ...JSON.parse(await runCli(args)), source: doc.getText() };
+    } finally {
+      if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
   if (!(await onlineAllowed(ctx))) throw new Error('analysis cancelled (no local compiler, online not allowed). Set compactXray.command to use a local one.');
   return xrayOnline(doc, deep);
@@ -166,7 +188,7 @@ class Lenses {
 }
 
 async function analyze(doc, ctx, deep = false) {
-  if (!doc || !doc.fileName.endsWith('.compact')) return;
+  if (!isCompact(doc)) return;
   ctx.status.text = '$(sync~spin) X-Ray';
   ctx.status.show();
   try {
@@ -195,16 +217,17 @@ function reportHtml(x) {
 
 async function openReport(ctx) {
   const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
-  if (!doc || !doc.fileName.endsWith('.compact')) return vscode.window.showInformationMessage('Open a .compact file first.');
+  if (!isCompact(doc)) return vscode.window.showInformationMessage('Open a Compact contract first (a .compact file, or one pasted into an editor tab).');
   const x = results.get(doc.uri.toString()) ?? (await analyze(doc, ctx));
   if (!x) return;
   const panel = vscode.window.createWebviewPanel('compactXray', `X-Ray: ${path.basename(doc.fileName)}`, vscode.ViewColumn.Beside, { enableScripts: true });
-  panel.webview.html = reportHtml({ ...x, file: path.basename(doc.fileName) });
+  panel.webview.html = reportHtml({ ...x, file: doc.isUntitled ? 'contract.compact' : path.basename(doc.fileName) });
 }
 
 async function initPolicy(ctx) {
   const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
-  if (!doc || !doc.fileName.endsWith('.compact')) return;
+  if (!isCompact(doc)) return;
+  if (doc.isUntitled) return vscode.window.showInformationMessage('Save the contract first: the policy is written next to it.');
   try {
     if ((await engine(ctx)) === 'local') {
       await runCli(['init', toCliPath(doc.fileName)]);
@@ -234,12 +257,39 @@ function activate(context) {
     vscode.commands.registerCommand('compactXray.report', () => openReport(ctx)),
     vscode.commands.registerCommand('compactXray.initPolicy', () => initPolicy(ctx)),
     vscode.workspace.onDidSaveTextDocument((doc) => cfg().get('runOnSave') && analyze(doc, ctx)),
+    vscode.workspace.onDidOpenTextDocument((doc) => adopt(doc)),
+    vscode.window.onDidChangeActiveTextEditor((ed) => ed && seen(ed.document, ctx)),
+    vscode.workspace.onDidChangeTextDocument((e) => typed(e.document, ctx)),
     vscode.workspace.onDidCloseTextDocument((doc) => { ctx.diagnostics.delete(doc.uri); results.delete(doc.uri.toString()); }),
     vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('compactXray')) localWorks = undefined; }),
   );
-  if (active()) analyze(active(), ctx);
+  if (active()) seen(active(), ctx);
+}
+
+/** Give a contract the Compact language (colours, and the language id other tools key on). */
+function adopt(doc) {
+  if (isCompact(doc) && doc.languageId !== 'compact' && vscode.languages.setTextDocumentLanguage) {
+    vscode.languages.setTextDocumentLanguage(doc, 'compact').then(undefined, () => undefined);
+  }
+}
+
+/** A contract came into view: analyse it unless it already has a result. */
+function seen(doc, ctx) {
+  if (!isCompact(doc)) return;
+  adopt(doc);
+  if (!results.has(doc.uri.toString())) analyze(doc, ctx);
+}
+
+/** Unsaved contracts (an Untitled tab) are analysed a moment after typing or pasting stops;
+ *  saved files are analysed on save. */
+const typing = new Map();
+function typed(doc, ctx) {
+  if (!doc.isUntitled || !cfg().get('runOnType') || !isCompact(doc)) return;
+  const k = doc.uri.toString();
+  clearTimeout(typing.get(k));
+  typing.set(k, setTimeout(() => { typing.delete(k); adopt(doc); analyze(doc, ctx); }, 1500));
 }
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, _test: { projectFiles, reportHtml, resetEngine: () => { localWorks = undefined; } } };
+module.exports = { activate, deactivate, _test: { isCompact, projectFiles, reportHtml, resetEngine: () => { localWorks = undefined; } } };
