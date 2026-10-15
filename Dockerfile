@@ -25,4 +25,4 @@ COPY --chown=xray web ./web
 COPY --chown=xray examples ./examples
 
 EXPOSE 4400
-CMD ["npx", "tsx", "src/server.ts", "--host", "0.0.0.0", "--port", "4400"]
+CMD ["npx", "tsx", "src/local-server.ts", "--host", "0.0.0.0", "--port", "4400"]

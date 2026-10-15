@@ -1,5 +1,5 @@
 // Local web UI: paste a contract, get the x-ray. No dependencies beyond Node.
-//   npx tsx src/server.ts [--port 4400] [--host 127.0.0.1]
+//   npx tsx src/local-server.ts [--port 4400] [--host 127.0.0.1]
 // The compiler runs on this machine, so the server binds to localhost by default.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync, readdirSync } from 'node:fs';

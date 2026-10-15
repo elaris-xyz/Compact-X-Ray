@@ -125,7 +125,7 @@ warnings by default), and produces SARIF so findings appear inline on the pull r
 ### Web UI
 
 ```bash
-npx tsx src/server.ts          # http://127.0.0.1:4400
+npx tsx src/local-server.ts          # http://127.0.0.1:4400
 ```
 
 Paste a contract, drop or open several files (a contract and the files it imports), or load one of
