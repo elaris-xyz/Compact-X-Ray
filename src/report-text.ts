@@ -132,6 +132,8 @@ export function renderText(x: Xray, extra: { check?: PolicyCheck; diff?: Diff } 
     say();
   }
 
+  say(dim('Exact value: readable by anyone. Hash: hides it only if hard to guess. Decision: one yes/no per call.'));
+  say(dim('Computation (e.g. num1 + num2): not the value itself, but often reversible — treat it as published.'));
   say(dim('Returned values go back to the calling DApp. Measured on a local network (ledger 8): they are not in the'));
   say(dim('published transaction, even when the compiler asks for disclose() on them.'));
   return out.join('\n');

@@ -168,6 +168,30 @@ export async function xrayFile(file: string, opts: XrayOptions = {}): Promise<Xr
       });
     }
   }
+  // A computation that reaches public state from ONE private value (and constants or public
+  // values) can usually be undone: num1 * num1 gives num1 back.
+  const computedAt = new Map<string, Leak[]>();
+  for (const l of leaks) {
+    if (l.exposure !== 'derived' || l.sink.kind === 'return') continue;
+    const k = `${l.circuit}|${l.sink.line}|${l.sink.char}`;
+    computedAt.set(k, [...(computedAt.get(k) ?? []), l]);
+  }
+  for (const group of computedAt.values()) {
+    const sources = new Set(group.map((l) => `${l.source.kind}:${l.source.name}`));
+    if (sources.size !== 1) continue;
+    const l = group[0]!;
+    const place = l.sink.kind === 'stdlib' ? `${l.sink.call}()` : `\`${l.sink.field ?? 'the ledger'}\``;
+    advice.push({
+      severity: 'notice',
+      lines: [l.sink.line],
+      title: `\`${l.source.name}\` can probably be worked back out of ${place} in \`${l.circuit}\``,
+      detail:
+        `The public value is the result of ${l.operation ? `a ${l.operation}` : 'a computation'} of this one private value ` +
+        '(with constants or public values), and such computations can usually be reversed. Treat it as published, ' +
+        'or mix in a secret before it reaches the ledger.',
+    });
+  }
+
   // --deep: ask the compiler, one disclose() at a time, whether each is needed. Removing a needed
   // one makes the contract fail to compile; one whose removal still compiles protects nothing.
   const discloses: Xray['discloses'] = [];

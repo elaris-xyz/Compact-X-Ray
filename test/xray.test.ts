@@ -81,3 +81,11 @@ test('a contract that does not compile: the error with its line, and no claims',
   assert.match(text, /line 28/);
   assert.doesNotMatch(text, /nothing private|STAYS PRIVATE/);
 });
+
+test('a computation of a single private value is flagged as reversible', async () => {
+  const c = await xrayFile(path.join(import.meta.dirname, '..', 'examples', 'calculator.compact'));
+  const rev = c.advice.filter((a) => a.title.includes('worked back'));
+  // square(num1) = num1 * num1 comes from one private value; add/subtract/multiply mix two.
+  assert.deepEqual(rev.map((a) => a.lines).flat(), [18]);
+  assert.match(rev[0]!.title, /`num1` can probably be worked back out of `result` in `square`/);
+});

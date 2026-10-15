@@ -11,7 +11,14 @@ export function renderSarif(x: Xray, check?: PolicyCheck, version = '0.1.0'): st
   const loc = (line: number) => [{ physicalLocation: { artifactLocation: { uri }, region: { startLine: Math.max(1, line) } } }];
 
   for (const a of x.advice) {
-    const rule = a.title.includes('guessed') ? 'guessable-hash' : a.title.includes('published as-is') ? 'witness-published' : a.title.includes('decision') ? 'secret-branch' : 'compile';
+    const rule = a.title.includes('guessed') ? 'guessable-hash'
+      : a.title.includes('published as-is') ? 'witness-published'
+      : a.title.includes('decision') ? 'secret-branch'
+      : a.title.includes('worked back') ? 'reversible-computation'
+      : a.title.includes('ownPublicKey') ? 'ownpublickey-auth'
+      : a.title.includes('constant salt') ? 'constant-salt'
+      : a.title.includes('not required') ? 'unneeded-disclose'
+      : 'compile';
     for (const line of a.lines.length ? a.lines : [1]) {
       results.push({ ruleId: rule, level: LEVEL[a.severity], message: { text: `${a.title}. ${a.detail}`.replace(/`/g, "'") }, locations: loc(line) });
     }
@@ -41,6 +48,10 @@ export function renderSarif(x: Xray, check?: PolicyCheck, version = '0.1.0'): st
             { id: 'guessable-hash', shortDescription: { text: 'A hash of a small-domain private value is public and can be brute-forced' } },
             { id: 'witness-published', shortDescription: { text: 'A witness value is published unchanged' } },
             { id: 'secret-branch', shortDescription: { text: 'A ledger update depends on a decision about a private value' } },
+            { id: 'reversible-computation', shortDescription: { text: 'A computation of a single private value is public and can usually be reversed' } },
+            { id: 'ownpublickey-auth', shortDescription: { text: 'ownPublicKey() is used to decide who may act; anyone can pass that check' } },
+            { id: 'constant-salt', shortDescription: { text: 'A commitment uses a constant salt, so it is a plain hash' } },
+            { id: 'unneeded-disclose', shortDescription: { text: 'A disclose() call the compiler does not require' } },
             { id: 'compile', shortDescription: { text: 'The contract does not compile' } },
           ],
         },
