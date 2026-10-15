@@ -4,7 +4,7 @@ import type { Xray } from './analyze.ts';
 import { fingerprints, type Diff, type PolicyCheck } from './policy.ts';
 import { explain } from './explain.ts';
 
-const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' } as const;
+const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'computed' } as const;
 const ICON = { warning: '🔴', notice: '🟡', info: '🔵' } as const;
 
 function cell(s: string): string {

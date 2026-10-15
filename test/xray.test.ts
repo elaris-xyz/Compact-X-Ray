@@ -57,7 +57,7 @@ test('plain-language summary', async () => {
   const lines = explain(x);
   const reveal = lines.find((l) => l.circuit === 'reveal');
   assert.ok(reveal);
-  assert.match(reveal.text, /anyone watching the chain learns .*the exact `amount` in `revealed`/);
+  assert.match(reveal.text, /anyone watching the chain learns .*the exact value of `amount` in `revealed`/);
   assert.equal(lines.find((l) => l.circuit === 'peek')?.tone, 'caller');
 });
 

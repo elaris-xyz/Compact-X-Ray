@@ -9,7 +9,7 @@ const EXPOSURE: Record<Exposure, string> = {
   value: 'the exact value',
   hash: 'a hash of it',
   comparison: 'the result of a comparison with it',
-  derived: 'something derived from it',
+  derived: 'the result of a computation with it',
 };
 
 const tty = process.stdout.isTTY && !process.env['NO_COLOR'];
@@ -92,7 +92,9 @@ export function renderText(x: Xray, extra: { check?: PolicyCheck; diff?: Diff } 
         ? `${l.sink.call}() — reveals ${l.sink.reveals}`
         : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)'
         : l.sink.field ? `ledger ${l.sink.field}` : 'a ledger operation';
-      const how = l.exposure === 'value' ? yellow(EXPOSURE[l.exposure]) : EXPOSURE[l.exposure];
+      const how = l.exposure === 'value' ? yellow(EXPOSURE[l.exposure])
+        : l.exposure === 'derived' && l.operation ? `the result of ${/^[aeiou]/.test(l.operation) ? 'an' : 'a'} ${l.operation} with it`
+        : EXPOSURE[l.exposure];
       const key = `${what}|${where}|${l.exposure}`;
       const g = groups.get(key) ?? {
         label: l.sink.kind === 'stdlib' ? `${cyan(what)} → ${where} ${dim(`(${EXPOSURE[l.exposure]})`)}` : `${cyan(what)} → ${where}: ${how}`,

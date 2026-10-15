@@ -2,17 +2,26 @@
 // runs. For readers who do not read Compact (auditors, product owners, users).
 import type { Leak, Xray } from './analyze.ts';
 
-const HOW: Record<Leak['exposure'], string> = {
-  value: 'the exact',
-  hash: 'a fingerprint (hash) of',
-  comparison: 'a yes/no decision about',
-  derived: 'something derived from',
-};
+const an = (w: string) => `${/^[aeiou]/.test(w) ? 'an' : 'a'} ${w}`;
+
+/** "the private value `sk`" for a witness, "`amount`" for an argument. */
+function name(l: Leak): string {
+  return l.source.kind === 'witness' ? `the private value \`${l.source.name}\`` : `\`${l.source.name}\``;
+}
+
+/** What is learned about these values (all of one leak kind): "the result of an addition of `a` and `b`". */
+function learned(sample: Leak, names: string[]): string {
+  const who = list(names);
+  switch (sample.exposure) {
+    case 'value': return `the exact value of ${who}`.replace('the exact value of the private value', 'the exact private value');
+    case 'hash': return `a fingerprint (hash) of ${who}`;
+    case 'comparison': return `a yes/no decision about ${who}`;
+    default: return sample.operation ? `the result of ${an(sample.operation)} of ${who}` : `the result of a computation with ${who}`;
+  }
+}
 
 function what(l: Leak): string {
-  const n = `\`${l.source.name}\``;
-  if (l.source.kind !== 'witness') return `${HOW[l.exposure]} ${n}`;
-  return l.exposure === 'value' ? `the exact private value ${n}` : `${HOW[l.exposure]} the private value ${n}`;
+  return learned(l, [name(l)]);
 }
 
 function where(l: Leak): string {
@@ -46,13 +55,19 @@ export function explain(x: Xray): Sentence[] {
       });
       continue;
     }
-    // Group by what is learned, then list where it shows up.
-    const byWhat = new Map<string, Set<string>>();
+    // Values that leak the same way into the same place read as one phrase ("an addition of `a` and
+    // `b` in `result`"), and one phrase that reaches several places lists them all.
+    const byPlace = new Map<string, { sample: Leak; names: Set<string>; place: string }>();
     for (const l of onChain) {
-      const k = what(l);
-      const s = byWhat.get(k) ?? new Set<string>();
-      s.add(where(l));
-      byWhat.set(k, s);
+      const k = `${l.exposure}|${l.operation ?? ''}|${where(l)}`;
+      const g = byPlace.get(k) ?? { sample: l, names: new Set<string>(), place: where(l) };
+      g.names.add(name(l));
+      byPlace.set(k, g);
+    }
+    const byWhat = new Map<string, Set<string>>();
+    for (const g of byPlace.values()) {
+      const w = learned(g.sample, [...g.names]);
+      byWhat.set(w, (byWhat.get(w) ?? new Set<string>()).add(g.place));
     }
     const parts = [...byWhat.entries()].map(([w, places]) => `${w} ${list([...places])}`);
     out.push({ circuit: c.name, tone: 'public', text: `${who}, anyone watching the chain learns ${parts.join('; and ')}.` });

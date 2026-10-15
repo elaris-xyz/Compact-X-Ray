@@ -41,6 +41,8 @@ export type RawDisclosure = {
   source: DisclosureSource;
   nature: string;
   exposure: Exposure;
+  /** For a computed value: the operation the compiler names ("addition", "multiplication", …). */
+  operation?: string;
   sink: Sink;
   path: { step: string; at?: Pos }[];
 };
@@ -71,6 +73,8 @@ function readSource(text: string, at?: Pos): DisclosureSource {
 function readExposure(nature: string): Exposure {
   if (/boolean value of (?:the )?(?:boolean value of )?the result of a comparison/.test(nature)) return 'comparison';
   if (/a hash of the witness value/.test(nature)) return 'hash';
+  // A Boolean witness disclosed as such is its exact value, not something derived from it.
+  if (/disclose the boolean value of the witness value/.test(nature)) return 'value';
   if (/disclose the witness value\b|given by the witness value\b/.test(nature)) return 'value';
   return 'derived';
 }
@@ -120,6 +124,7 @@ export function parseCompilerReport(output: string): ParsedReport {
       source: readSource(src.text, src.at),
       nature,
       exposure: readExposure(nature),
+      operation: /the result of an? (\w+) involving/.exec(nature)?.[1],
       sink: readSink(nature),
       path: steps,
     });

@@ -2,7 +2,7 @@
   "name": "compact-xray",
   "displayName": "Compact X-Ray",
   "description": "See, line by line, what a Midnight Compact contract makes public — from the compiler itself. Works out of the box (online), or with your local compiler.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "compact-xray",
   "license": "Apache-2.0",
   "engines": {

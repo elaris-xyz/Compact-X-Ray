@@ -205,7 +205,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const COLOR = { value: 'var(--value)', hash: 'var(--hash)', comparison: 'var(--comparison)', derived: 'var(--derived)' };
-const WORDS = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' };
+const WORDS = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'computed' };
 const RANK = { value: 0, hash: 1, comparison: 2, derived: 3 };
 let current = null, circuitFilter = 'all';
 
@@ -388,7 +388,7 @@ function render() {
     </div>`}
     ${plainHtml(x)}
     <div class="tabs">${tabs.map((t) => `<button class="tab ${t === circuitFilter ? 'on' : ''}" data-c="${esc(t)}">${esc(t)}${t === 'all' ? '' : `<span class="c">${x.leaks.filter((l) => l.circuit === t).length}</span>`}</button>`).join('')}</div>
-    <div class="legend">${Object.keys(WORDS).map((k) => `<span><i style="background:${COLOR[k]}"></i>${WORDS[k] === 'decision' ? 'a decision based on it' : WORDS[k] === 'derived' ? 'something derived from it' : WORDS[k] === 'hash' ? 'a hash of it' : 'its exact value'}</span>`).join('')}</div>
+    <div class="legend">${Object.keys(WORDS).map((k) => `<span><i style="background:${COLOR[k]}"></i>${WORDS[k] === 'decision' ? 'a decision based on it' : WORDS[k] === 'computed' ? 'a computation with it' : WORDS[k] === 'hash' ? 'a hash of it' : 'its exact value'}</span>`).join('')}</div>
     <div class="map" id="map">
       <div class="col" id="srcCol"><h3>Private</h3>
         ${[...sources.entries()].map(([k, l]) => `<div class="node private" data-k="${esc(k)}">${esc(srcLabel(l))}<small>${esc(srcSub(l))}</small></div>`).join('') || '<div class="hint">nothing private reaches the public side</div>'}
@@ -516,7 +516,7 @@ function flowRow(l, lines, showCircuit = false) {
   const where = l.sink.kind === 'stdlib' ? `${l.sink.call}() — reveals ${l.sink.reveals}` : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)' : `ledger <code>${esc(l.sink.field || '?')}</code>`;
   const steps = (l.path || []).filter((p) => p.at);
   const trail = steps.length > 1 ? `<div class="trail">${steps.map((p) => `<span data-l="${p.at.line}">${esc(p.step.replace(/^the /, ''))} <i>L${p.at.line}</i></span>`).join('<b>→</b>')}</div>` : '';
-  return `<div class="flow" data-lines="${[...lines].join(',')}"><span class="what">${showCircuit ? `<span class="circ">${esc(l.circuit)}</span>` : ''}${esc(srcLabel(l))}</span><span class="where">→ ${l.sink.kind === 'stdlib' ? esc(where) : where}<span class="pill ${l.exposure}">${WORDS[l.exposure]}</span></span><span class="lines">L${[...lines].join(', L')}</span>${trail}</div>`;
+  return `<div class="flow" data-lines="${[...lines].join(',')}"><span class="what">${showCircuit ? `<span class="circ">${esc(l.circuit)}</span>` : ''}${esc(srcLabel(l))}</span><span class="where">→ ${l.sink.kind === 'stdlib' ? esc(where) : where}<span class="pill ${l.exposure}" title="${l.operation ? `the result of an operation (${esc(l.operation)}) on this value` : ''}">${l.exposure === 'derived' && l.operation ? esc(l.operation) : WORDS[l.exposure]}</span></span><span class="lines">L${[...lines].join(', L')}</span>${trail}</div>`;
 }
 
 function circuitsHtml(x, leaks) {

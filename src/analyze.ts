@@ -12,6 +12,7 @@ export type Leak = {
   source: DisclosureSource;   // which private value
   sourceType?: string;        // its declared type, when the source says
   exposure: Exposure;         // how much of it
+  operation?: string;         // for a computed value: "addition", "multiplication", …
   sink: {
     line: number;
     char: number;
@@ -115,6 +116,7 @@ export async function xrayFile(file: string, opts: XrayOptions = {}): Promise<Xr
       source: d.source,
       sourceType: typeOf(model, d.source),
       exposure: d.exposure,
+      operation: d.operation,
       sink: {
         line: d.at.line,
         char: d.at.char,

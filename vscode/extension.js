@@ -15,7 +15,8 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' };
+const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'computed' };
+const how = (l) => (l.exposure === 'derived' && l.operation ? `result of ${/^[aeiou]/.test(l.operation) ? 'an' : 'a'} ${l.operation}` : WORD[l.exposure]);
 const results = new Map(); // uri -> x-ray result
 let localWorks; // undefined until probed
 
@@ -159,7 +160,7 @@ function publish(doc, x, diagnostics) {
   if (cfg().get('showDisclosures')) {
     const seen = new Set();
     for (const l of x.leaks) {
-      const msg = `Public: ${sourceName(l)} → ${sinkName(l)} (${WORD[l.exposure]})${l.sink.reveals ? ` — reveals ${l.sink.reveals}` : ''}`;
+      const msg = `Public: ${sourceName(l)} → ${sinkName(l)} (${how(l)})${l.sink.reveals ? ` — reveals ${l.sink.reveals}` : ''}`;
       const key = `${l.sink.line}|${msg}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -188,7 +189,7 @@ class Lenses {
     if (!x || !x.compiles || !cfg().get('codeLens')) return [];
     return x.circuits.filter((c) => c.exported || c.leaks).map((c) => {
       const mine = x.leaks.filter((l) => l.circuit === c.name && l.sink.kind !== 'return');
-      const parts = [...new Set(mine.map((l) => `${l.source.name} (${WORD[l.exposure]}) → ${l.sink.kind === 'stdlib' ? `${l.sink.call}()` : l.sink.field}`))];
+      const parts = [...new Set(mine.map((l) => `${l.source.name} (${how(l)}) → ${l.sink.kind === 'stdlib' ? `${l.sink.call}()` : l.sink.field}`))];
       const title = parts.length ? `🩻 publishes ${parts.slice(0, 3).join(', ')}${parts.length > 3 ? ` +${parts.length - 3}` : ''}` : '🩻 nothing private is published';
       return new vscode.CodeLens(lineRange(doc, c.startLine), { title, command: 'compactXray.report' });
     });
