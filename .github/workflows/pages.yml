@@ -1,0 +1,52 @@
+name: pages
+
+# Builds the static site (landing page, the X-Ray app, every bundled example pre-analysed with the
+# real compiler) and publishes it to GitHub Pages. Set the repository variable XRAY_API to a live
+# analysis endpoint (e.g. the Vercel deployment) to let visitors x-ray their own contracts.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Compact toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/compact" update 0.31.1
+      - run: npm ci
+      - name: Build site
+        env:
+          XRAY_API: ${{ vars.XRAY_API }}
+          XRAY_REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: npx tsx scripts/build-site.ts site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,23 @@
+{
+  "name": "compact-xray",
+  "version": "0.1.0",
+  "description": "See what a Midnight Compact contract makes public, and what stays private — straight from the compiler.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "compact-xray": "./bin/compact-xray"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "xray": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3"
+  }
+}

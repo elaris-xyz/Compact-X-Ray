@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compact: ['0.31.1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Compact toolchain ${{ matrix.compact }}
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/compact" update "${{ matrix.compact }}"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Dogfood: the action on the bundled examples (no policy, so it reports and checks advice).
+      - uses: ./
+        with:
+          contracts: examples/*.compact
+          compact-version: ${{ matrix.compact }}
+          fail-on: never

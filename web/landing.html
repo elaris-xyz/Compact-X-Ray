@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compact X-Ray — what your Midnight contract makes public</title>
+<meta name="description" content="Compact X-Ray shows, line by line, which private values a Midnight Compact smart contract makes public — and how much of them — straight from the official compiler.">
+<meta property="og:title" content="Compact X-Ray">
+<meta property="og:description" content="See what your Midnight contract makes public — straight from the compiler.">
+<style>
+  :root {
+    --bg: #0b0b0f; --panel: #14141b; --panel-2: #1b1b24; --line: #2a2a36;
+    --text: #ececf1; --muted: #9a9aab; --faint: #6b6b7c; --accent: #8b7bff;
+    --value: #ff6b6b; --hash: #f5b14c; --comparison: #5aa9ff; --ok: #4cd18a;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--sans); }
+  a { color: inherit; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  nav { display: flex; align-items: center; gap: 18px; padding: 18px 0; }
+  nav .logo { display: flex; gap: 10px; align-items: center; font-weight: 700; font-size: 17px; text-decoration: none; }
+  nav .sp { flex: 1; }
+  nav a.l { color: var(--muted); text-decoration: none; font-size: 14px; }
+  nav a.l:hover { color: var(--text); }
+  .hero { padding: 64px 0 40px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+  .hero > * { min-width: 0; }
+  @media (max-width: 860px) { .hero { grid-template-columns: 1fr; padding-top: 28px; } }
+  @media (max-width: 640px) { nav a.l { display: none; } nav a.l.keep { display: inline; } .term { font-size: 11.5px; } }
+  h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.08; margin: 0 0 18px; letter-spacing: -.02em; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lead { color: var(--muted); font-size: 18px; margin: 0 0 26px; max-width: 34em; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 11px 18px; border-radius: 10px; font-weight: 650; text-decoration: none; border: 1px solid var(--line); background: var(--panel-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b0b0f; }
+  .term { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; font: 13px/1.65 var(--mono); overflow-x: auto; white-space: pre; }
+  .term .d { color: var(--faint); } .term .y { color: var(--hash); } .term .r { color: var(--value); } .term .g { color: var(--ok); } .term .c { color: #7fd4ff; }
+  section { padding: 44px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 28px; margin: 0 0 10px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .n { font: 600 12px var(--mono); color: var(--accent); margin-bottom: 8px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chip { font-size: 12.5px; border-radius: 999px; padding: 2px 10px; color: #0b0b0f; font-weight: 650; }
+  .finding { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .finding:last-child { border-bottom: 0; }
+  .finding .i { font-size: 22px; }
+  .finding b { display: block; }
+  .finding span { color: var(--muted); font-size: 15px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .ex { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .ex h3 { margin: 0; font: 600 15px var(--mono); }
+  .ex p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+  .ex .stats { display: flex; gap: 14px; font-size: 12.5px; color: var(--faint); }
+  .ex .stats b { color: var(--text); }
+  .ex .links { display: flex; gap: 14px; font-size: 14px; }
+  .ex .links a { color: var(--accent); text-decoration: none; }
+  code { font-family: var(--mono); font-size: .92em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  pre.snip { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font: 13px/1.6 var(--mono); }
+  footer { color: var(--faint); font-size: 13.5px; padding: 30px 0 50px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="./">
+      <svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="11.5" fill="none" stroke="#8b7bff" stroke-width="2"/><circle cx="13" cy="13" r="5" fill="none" stroke="#ececf1" stroke-width="2"/><path d="M13 1.5v5M13 19.5v5M1.5 13h5M19.5 13h5" stroke="#8b7bff" stroke-width="2"/></svg>
+      Compact X-Ray
+    </a>
+    <div class="sp"></div>
+    <a class="l" href="#how">How it works</a>
+    <a class="l" href="#findings">Findings</a>
+    <a class="l" href="#gallery">Examples</a>
+    <a class="l keep" href="{{REPO}}">GitHub</a>
+  </nav>
+
+  <div class="hero">
+    <div>
+      <h1>See what your Midnight contract makes <em>public</em>.</h1>
+      <p class="lead">A map key, a branch on a secret, a hash of a 4-digit PIN: on Midnight they all leak information, and none of it is obvious from reading the code. Compact X-Ray asks the official compiler, and shows every private value that reaches the chain, how much of it, and through which line.</p>
+      <div class="cta">
+        <a class="btn primary" href="app/">Open the X-Ray</a>
+        <a class="btn" href="#use">Use it in your project</a>
+      </div>
+    </div>
+<div class="term"><span class="d">$</span> compact-xray private-bid.compact
+
+<span class="c">IN PLAIN WORDS</span>
+ <span class="y">●</span> When the contract is deployed, anyone watching the
+   chain learns the exact <b>minimum</b> in minimumBid.
+ <span class="y">●</span> When someone calls placeBid, anyone watching the
+   chain learns a fingerprint (hash) of the private
+   value <b>localSecretKey</b> in bidCommitments.
+
+<span class="c">STAYS PRIVATE</span>
+ <span class="g">✓ placeBid(amount)</span>
+
+<span class="c">PRIVACY POLICY</span>
+ <span class="r">✗ not in policy: placeBid: arg amount -> ledger revealedBids</span></div>
+  </div>
+
+  <section id="how">
+    <h2>Nothing is guessed. The compiler says it.</h2>
+    <p class="sub">X-Ray does not re-implement Compact's privacy rules, so it cannot drift from them. It uses the compiler as the oracle.</p>
+    <div class="grid">
+      <div class="card"><div class="n">01</div><h3>Remove every <code>disclose()</code></h3><p>A copy of your contract with each <code>disclose(</code> blanked out, character for character, so every line and column stays where it was.</p></div>
+      <div class="card"><div class="n">02</div><h3>Let the compiler object</h3><p>It now rejects each place a private value would reach the public side, naming the value, how much of it leaks, and the path it takes.</p></div>
+      <div class="card"><div class="n">03</div><h3>Read it as a map</h3><p>Private inputs on one side, public state and token operations on the other, one line per disclosure, coloured by how much leaks.</p>
+        <div class="chips"><span class="chip" style="background:var(--value)">exact value</span><span class="chip" style="background:var(--hash)">hash</span><span class="chip" style="background:var(--comparison)">decision</span></div></div>
+    </div>
+  </section>
+
+  <section id="findings">
+    <h2>What we measured</h2>
+    <p class="sub">Run against the compiler (0.31.1) and a local Midnight network (ledger 8). Some of it contradicts the docs.</p>
+    <div class="finding"><div class="i">🔁</div><div><b>Return values are not published.</b><span>The compiler demands <code>disclose()</code> to return a witness value, but a probe contract showed the returned value is not in the transaction on chain; it goes back to the calling DApp.</span></div></div>
+    <div class="finding"><div class="i">🗝️</div><div><b>Ledger lookups are public.</b><span>A key used only in <code>m.member(k)</code> inside an <code>assert</code> must still be disclosed.</span></div></div>
+    <div class="finding"><div class="i">🔀</div><div><b>Branches on secrets leak.</b><span><code>if (secret &gt; 5) {a = 1} else {a = 2}</code> reveals the decision; the compiler tracks control flow.</span></div></div>
+    <div class="finding"><div class="i">🧹</div><div><b>{{EXTRA}} unnecessary <code>disclose()</code> calls in the official examples.</b><span>Mostly inside <code>assert</code> comparisons, which only reveal pass/fail. <code>--deep</code> finds them by removing one at a time.</span></div></div>
+  </section>
+
+  <section id="use">
+    <h2>Use it where you work</h2>
+    <p class="sub">The same analysis behind every surface.</p>
+    <div class="grid">
+      <div class="card"><h3>CLI</h3><p>Report, <code>init</code> a privacy policy, <code>check</code> it, <code>diff</code> two versions. Text, JSON, Markdown, SARIF, HTML.</p></div>
+      <div class="card"><h3>GitHub Action</h3><p>Fails a pull request that makes a private value newly public, with findings inline on the diff.</p></div>
+      <div class="card"><h3>VS Code</h3><p>On save: each disclosing line marked, warnings for risky patterns, and what each circuit publishes above it.</p></div>
+    </div>
+<pre class="snip"># .github/workflows/privacy.yml
+- uses: actions/checkout@v4
+- uses: {{ACTION}}
+  with:
+    contracts: contracts/**/*.compact
+    compact-version: 0.31.1
+- uses: github/codeql-action/upload-sarif@v3
+  if: always()
+  with: { sarif_file: compact-xray.sarif }</pre>
+  </section>
+
+  <section id="gallery">
+    <h2>The official examples, x-rayed</h2>
+    <p class="sub">Every example contract from <a href="https://github.com/midnightntwrk/midnight-examples">midnightntwrk/midnight-examples</a>, analysed when this site was built.</p>
+    <div class="gallery">{{GALLERY}}</div>
+  </section>
+
+  <footer>Compact X-Ray {{VERSION}} · compiler {{COMPILER}} · built {{DATE}} · Apache-2.0 · <a href="{{REPO}}">source</a><br>Not affiliated with the Midnight Foundation. Example contracts © Midnight Foundation, Apache-2.0.</footer>
+</div>
+</body>
+</html>

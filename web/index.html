@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compact X-Ray</title>
+<style>
+  :root {
+    --bg: #0b0b0f; --panel: #14141b; --panel-2: #1b1b24; --line: #2a2a36;
+    --text: #ececf1; --muted: #9a9aab; --faint: #6b6b7c;
+    --accent: #8b7bff;
+    --value: #ff6b6b; --hash: #f5b14c; --comparison: #5aa9ff; --derived: #a0a0b4;
+    --ok: #4cd18a;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+  a { color: var(--accent); }
+  header { display: flex; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: .2px; }
+  .logo svg { flex: none; }
+  .tagline { color: var(--muted); }
+  .spacer { flex: 1; }
+  .badge { font: 12px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  main { display: grid; grid-template-columns: minmax(340px, 44%) 1fr; min-height: calc(100vh - 66px); }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  .pane { padding: 18px 20px; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  @media (max-width: 960px) {
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+    .code-wrap { height: 55vh; min-height: 300px; }
+    /* Once there is a result, show it first; the code follows. */
+    body.has-result #out { order: -1; border-top: 0; border-bottom: 1px solid var(--line); }
+    header { padding: 14px 16px; }
+    .pane { padding: 14px 16px; }
+  }
+  @media (max-width: 560px) {
+    .map { grid-template-columns: 1fr 40px 1fr; padding: 10px; }
+    .node { font-size: 11.5px; padding: 6px 8px; }
+    .flow { grid-template-columns: 1fr auto; }
+    .flow .where { grid-column: 1 / -1; grid-row: 2; }
+    .tagline { display: none; }
+  }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  select, button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b0b0f; font-weight: 650; }
+  button.primary:disabled { opacity: .55; cursor: progress; }
+  button.ghost { background: transparent; }
+  .code-wrap { position: relative; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); height: calc(100vh - 170px); min-height: 420px; overflow: hidden; }
+  textarea { width: 100%; height: 100%; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 12.5px/1.6 var(--mono); padding: 14px 16px; tab-size: 2; white-space: pre; }
+  .code-view { height: 100%; overflow: auto; font: 12.5px/1.6 var(--mono); padding: 10px 0; }
+  .code-view .ln { display: grid; grid-template-columns: 52px 1fr; padding-right: 16px; white-space: pre; }
+  .code-view .ln .n { color: var(--faint); text-align: right; padding-right: 14px; user-select: none; }
+  .code-view .ln.mark-value { background: color-mix(in srgb, var(--value) 14%, transparent); }
+  .code-view .ln.mark-hash { background: color-mix(in srgb, var(--hash) 13%, transparent); }
+  .code-view .ln.mark-comparison { background: color-mix(in srgb, var(--comparison) 14%, transparent); }
+  .code-view .ln.mark-derived { background: color-mix(in srgb, var(--derived) 12%, transparent); }
+  .code-view .ln.focus { outline: 1px solid var(--accent); animation: pulse 1.2s ease-out; }
+  @keyframes pulse { from { background: color-mix(in srgb, var(--accent) 40%, transparent); } }
+  .hint { color: var(--muted); font-size: 13px; }
+  .plain { margin: 0 0 16px; }
+  .plain h2 { margin-top: 0; }
+  .plain p { margin: 0 0 6px; padding: 8px 12px; border-radius: 8px; background: var(--panel); border-left: 3px solid var(--ok); }
+  .plain p.public { border-left-color: var(--hash); }
+  .plain p.caller { border-left-color: var(--faint); }
+  .plain summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin: 4px 0 8px; }
+  .files { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+  .files span { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+  .files span.main { border-color: var(--accent); color: var(--text); }
+  .code-wrap.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  label.check { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
+  .actions button { font-size: 12.5px; padding: 5px 10px; }
+  .code-view .ln.extra .t { text-decoration: underline wavy var(--faint); text-underline-offset: 4px; }
+  .code-view .ln .tag { color: var(--faint); font-family: var(--sans); font-size: 11px; margin-left: 10px; }
+  .empty { display: grid; place-items: center; height: 60vh; color: var(--muted); text-align: center; }
+  .empty h2 { color: var(--text); margin: 0 0 6px; font-size: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 24px; font-weight: 700; }
+  .card.warn .v { color: var(--value); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .tab { font: 12.5px var(--mono); padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+  .tab.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .tab .c { color: var(--faint); margin-left: 4px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  .map { position: relative; display: grid; grid-template-columns: 1fr minmax(80px, 1.1fr) 1fr; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 18px; }
+  .map h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  .col { display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
+  .node { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 7px 10px; font: 12.5px var(--mono); overflow-wrap: anywhere; cursor: default; }
+  .node small { display: block; font-family: var(--sans); color: var(--faint); font-size: 11px; }
+  .node.private { border-left: 3px solid var(--ok); }
+  .node.public { border-right: 3px solid var(--accent); text-align: right; }
+  .node.token { border-right-color: #c77dff; }
+  .node.ret { border-right-color: var(--faint); border-style: dashed; }
+  .node.safe { opacity: .6; }
+  .node.dim { opacity: .25; }
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  svg.wires path { fill: none; stroke-linecap: round; opacity: .85; transition: opacity .15s; }
+  svg.wires path.dim { opacity: .08; }
+  section h2 { font-size: 15px; margin: 18px 0 8px; }
+  .flow { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: baseline; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .flow:hover { background: var(--panel-2); }
+  .flow .what { font: 12.5px var(--mono); }
+  .flow .where { color: var(--muted); }
+  .flow .lines { font: 12px var(--mono); color: var(--faint); }
+  .trail { grid-column: 1 / -1; display: none; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; font-size: 12px; color: var(--muted); padding: 2px 0 4px; }
+  .flow.open .trail { display: flex; }
+  .trail span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; cursor: pointer; }
+  .trail i { font-style: normal; color: var(--faint); font-family: var(--mono); }
+  .trail b { color: var(--faint); font-weight: 400; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 650; padding: 1px 8px; border-radius: 999px; margin-left: 6px; color: #0b0b0f; }
+  .pill.value { background: var(--value); } .pill.hash { background: var(--hash); }
+  .pill.comparison { background: var(--comparison); } .pill.derived { background: var(--derived); }
+  .circuit { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: var(--panel); }
+  .circuit > header { padding: 10px 12px; border-bottom: 1px solid var(--line); font: 600 13px var(--mono); }
+  .circuit > header span { font: 12px var(--sans); color: var(--faint); margin-left: 8px; }
+  .circuit .none { color: var(--ok); padding: 10px 12px; }
+  .advice { border-left: 3px solid var(--line); background: var(--panel); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .advice.warning { border-left-color: var(--value); } .advice.notice { border-left-color: var(--hash); } .advice.info { border-left-color: var(--comparison); }
+  .advice b { display: block; margin-bottom: 2px; }
+  .advice p { margin: 0; color: var(--muted); }
+  .advice .l { font: 12px var(--mono); color: var(--faint); cursor: pointer; }
+  .private-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .private-list span { font: 12px var(--mono); border: 1px solid color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); border-radius: 999px; padding: 2px 10px; }
+  .error { color: var(--value); white-space: pre-wrap; font: 12px var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  footer { color: var(--faint); font-size: 12px; margin-top: 22px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="11.5" fill="none" stroke="#8b7bff" stroke-width="2"/><circle cx="13" cy="13" r="5" fill="none" stroke="#ececf1" stroke-width="2"/><path d="M13 1.5v5M13 19.5v5M1.5 13h5M19.5 13h5" stroke="#8b7bff" stroke-width="2"/></svg>
+    Compact X-Ray
+  </div>
+  <div class="tagline">What your Midnight contract makes public — straight from the compiler.</div>
+  <div class="spacer"></div>
+  <div class="badge" id="compiler">compiler —</div>
+</header>
+<main>
+  <div class="pane">
+    <div class="toolbar">
+      <select id="examples" aria-label="Load an example"><option value="">Load an example…</option></select>
+      <button class="ghost" id="open" title="Open one or more .compact files (a contract and the files it includes)">Open files…</button>
+      <input type="file" id="picker" accept=".compact" multiple hidden>
+      <button class="ghost" id="edit" hidden>Edit</button>
+      <div class="spacer"></div>
+      <label class="check" title="Also ask the compiler, one by one, which disclose() calls are actually required (slower)"><input type="checkbox" id="deep" aria-label="Check every disclose() call (slower)"> check every disclose()</label>
+      <button class="primary" id="run">X-ray it</button>
+    </div>
+    <div class="files" id="files" hidden></div>
+    <div class="code-wrap">
+      <textarea id="src" spellcheck="false" aria-label="Compact contract" placeholder="Paste a Compact contract here, or load an example."></textarea>
+      <div class="code-view" id="view" hidden></div>
+    </div>
+  </div>
+  <div class="pane" id="out">
+    <div class="empty"><div><h2>Paste a contract and press X-ray it</h2>
+      <div>Every finding comes from the official Compact compiler: we remove each <code>disclose()</code>,<br>and the compiler tells us exactly which private value would reach the public side, and how.</div></div></div>
+  </div>
+</main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const COLOR = { value: 'var(--value)', hash: 'var(--hash)', comparison: 'var(--comparison)', derived: 'var(--derived)' };
+const WORDS = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' };
+const RANK = { value: 0, hash: 1, comparison: 2, derived: 3 };
+let current = null, circuitFilter = 'all';
+
+// Where this page is served from. The local server and the Docker image need nothing. A static
+// host (GitHub Pages) sets window.XRAY_CONFIG = { static: '..', api: 'https://…' }: examples then
+// come pre-analysed from `static`, and live analysis goes to `api` (no api → examples only).
+const CONFIG = Object.assign({ api: '', static: '' }, window.XRAY_CONFIG || {});
+const API = CONFIG.api.replace(/\/$/, '');
+const STATIC = CONFIG.static.replace(/\/$/, '');
+
+async function boot() {
+  if (window.__XRAY__) {   // standalone report: the result is embedded, there is no server
+    current = window.__XRAY__;
+    for (const id of ['#examples', '#run', '#edit', '#open', 'label.check']) $(id).hidden = true;
+    $('#compiler').textContent = `compiler ${current.compiler}${current.pragma ? ' · language ' + current.pragma : ''}`;
+    current.file = String(current.file).split(/[\\/]/).pop();
+    document.title = `Compact X-Ray — ${current.file}`;
+    render();
+    addEventListener('resize', () => drawWires());
+    return;
+  }
+  const ex = await fetch(STATIC ? `${STATIC}/examples/index.json` : '/api/examples').then((r) => r.json()).catch(() => []);
+  for (const e of ex) $('#examples').append(new Option(e.name, e.file));
+  $('#examples').onchange = async (ev) => {
+    if (!ev.target.value) return;
+    if (STATIC) {   // pre-analysed at build time: show it, no compiler needed
+      const name = ev.target.value.replace(/\.compact$/, '');
+      const x = await fetch(`${STATIC}/reports/${name}.json`).then((r) => r.json());
+      $('#src').value = x.source;
+      project = { main: x.file, others: x.files || [] };
+      showFiles(); showResult(x);
+      return;
+    }
+    const r = await fetch(`/api/examples/${ev.target.value}`);
+    if ((r.headers.get('content-type') || '').includes('json')) {   // a multi-file example
+      const ex = await r.json();
+      const main = ex.files.find((f) => f.name === ex.main) || ex.files[0];
+      project = { main: main.name, others: ex.files.filter((f) => f !== main) };
+      $('#src').value = main.source;
+    } else {
+      $('#src').value = await r.text();
+      project = { main: ev.target.value, others: [] };
+    }
+    showFiles();
+    showEditor(); run();
+  };
+  if (STATIC && !API) $('label.check').hidden = true;
+  // Deep link from the landing page: app/?example=<name>
+  const want = new URLSearchParams(location.search).get('example');
+  const opt = want && [...$('#examples').options].find((o) => o.value === want || o.value === `${want}.compact`);
+  if (opt) { $('#examples').value = opt.value; $('#examples').dispatchEvent(new Event('change')); }
+  $('#run').onclick = run;
+  $('#open').onclick = () => $('#picker').click();
+  $('#picker').onchange = (e) => loadFiles([...e.target.files]);
+  const wrap = $('.code-wrap');
+  wrap.addEventListener('dragover', (e) => { e.preventDefault(); wrap.classList.add('drop'); });
+  wrap.addEventListener('dragleave', () => wrap.classList.remove('drop'));
+  wrap.addEventListener('drop', (e) => { e.preventDefault(); wrap.classList.remove('drop'); loadFiles([...e.dataTransfer.files].filter((f) => f.name.endsWith('.compact'))); });
+  $('#edit').onclick = showEditor;
+  $('#src').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') run(); });
+  addEventListener('resize', () => current && drawWires());
+}
+
+// A contract may span several files: the main one (in the editor) and files it includes.
+let project = { main: '', others: [] };
+
+async function loadFiles(list) {
+  if (!list.length) return;
+  const files = await Promise.all(list.map(async (f) => ({ name: f.name, source: await f.text() })));
+  // The main contract is the one no other file includes or imports.
+  const used = new Set(files.flatMap((f) => [...f.source.matchAll(/^\s*(?:include|import)\s+"([^"]+)"/gm)].map((m) => m[1].replace(/(\.compact)?$/, '.compact').split('/').pop())));
+  const main = files.find((f) => !used.has(f.name)) || files[0];
+  project = { main: main.name, others: files.filter((f) => f !== main) };
+  $('#src').value = main.source;
+  $('#examples').value = '';
+  showFiles(); showEditor(); run();
+}
+
+function showFiles() {
+  const bar = $('#files');
+  bar.hidden = !project.others.length;
+  bar.innerHTML = project.others.length
+    ? `Files: <span class="main" title="the contract being x-rayed">${esc(project.main)}</span>${project.others.map((f) => `<span title="included by the contract">${esc(f.name)}</span>`).join('')}`
+    : '';
+}
+
+function showResult(x) {
+  current = x; circuitFilter = 'all';
+  $('#compiler').textContent = `compiler ${x.compiler}${x.pragma ? ' · language ' + x.pragma : ''}`;
+  render();
+}
+
+function showEditor() { $('#view').hidden = true; $('#src').hidden = false; $('#edit').hidden = true; }
+
+async function run() {
+  const source = $('#src').value;
+  if (!source.trim()) return;
+  const btn = $('#run'); btn.disabled = true; btn.textContent = 'Compiling…';
+  $('#out').innerHTML = `<div class="empty"><div><h2>Asking the compiler…</h2><div>It compiles your contract twice; this takes a few seconds.</div></div></div>`;
+  try {
+    const name = project.main || $('#examples').value || 'contract.compact';
+    if (STATIC && !API) {
+      throw new Error('This page has no live analysis service connected. The examples above are pre-analysed; to x-ray your own contract, run the CLI or the Docker image (see the README).');
+    }
+    const r = await fetch(`${API}/api/xray`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source, name, deep: $('#deep').checked, files: project.others }) });
+    const x = await r.json();
+    if (!r.ok) throw new Error(x.error || r.statusText);
+    showResult(x);
+  } catch (e) {
+    $('#out').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = 'X-ray it'; }
+}
+
+const srcKey = (l) => l.source.kind === 'witness' ? `w:${l.source.name}` : `a:${l.source.circuit}:${l.source.name}`;
+const srcLabel = (l) => l.source.kind === 'witness' ? `${l.source.name}()` : l.source.name;
+const srcSub = (l) => l.source.kind === 'witness' ? 'witness' : l.source.circuit === 'constructor' ? 'constructor arg' : `arg of ${l.source.circuit}`;
+const sinkKey = (l) => l.sink.kind === 'stdlib' ? `s:${l.sink.call}` : l.sink.kind === 'return' ? `r:${l.circuit}` : `f:${l.sink.field || '?'}`;
+
+function argNames(params) { return [...params.matchAll(/([A-Za-z_]\w*)\s*:/g)].map((m) => m[1]); }
+
+function render() {
+  const x = current;
+  document.body.classList.add('has-result');
+  const leaks = x.leaks.filter((l) => circuitFilter === 'all' || l.circuit === circuitFilter);
+  const warnings = x.advice.filter((a) => a.severity === 'warning').length;
+  const exported = x.circuits.filter((c) => c.exported);
+  const inputs = x.witnesses.length + exported.reduce((n, c) => n + argNames(c.params).length, 0);
+
+  // Everything private the compiler never reports as reaching the public side.
+  const stays = [], onChain = x.leaks.filter((l) => l.sink.kind !== 'return');
+  for (const c of exported) for (const a of argNames(c.params)) if (!onChain.some((l) => l.circuit === c.name && l.source.name === a)) stays.push(`${c.name}(${a})`);
+  for (const w of x.witnesses) if (!onChain.some((l) => l.source.kind === 'witness' && l.source.name === w.name)) stays.push(`${w.name}()`);
+
+  const tabs = ['all', ...x.circuits.filter((c) => c.exported || c.leaks).map((c) => c.name)];
+  const flows = new Map();
+  for (const l of leaks) {
+    const k = `${srcKey(l)}|${sinkKey(l)}|${l.exposure}`;
+    const f = flows.get(k) || { l, lines: new Set(), n: 0 };
+    f.lines.add(l.sink.line); f.n++; flows.set(k, f);
+  }
+  const sources = new Map(), sinks = new Map();
+  for (const f of flows.values()) {
+    sources.set(srcKey(f.l), f.l);
+    sinks.set(sinkKey(f.l), f.l);
+  }
+  // Public fields nothing private touches are still public: show them, faded.
+  const quietFields = x.ledger.filter((fd) => ![...sinks.keys()].includes(`f:${fd.name}`));
+
+  $('#out').innerHTML = `
+    ${x.compiles ? '' : `<div class="advice warning"><b>The contract does not compile as written</b><p>${esc(x.compileErrors.join('\n').slice(0, 1500))}</p></div>`}
+    <div class="cards">
+      <div class="card"><div class="k">Public ledger fields</div><div class="v">${x.ledger.length}</div></div>
+      <div class="card"><div class="k">Private inputs</div><div class="v">${inputs}</div></div>
+      <div class="card"><div class="k">Disclosures found</div><div class="v">${x.leaks.length}</div></div>
+      <div class="card ${warnings ? 'warn' : ''}"><div class="k">Warnings</div><div class="v">${warnings}</div></div>
+    </div>
+    ${window.__XRAY__ ? '' : `<div class="actions">
+      <button id="dlHtml" title="A single file with this report, viewable without the server">⬇ Report (HTML)</button>
+      <button id="dlPolicy" title="The disclosures this contract makes today; commit it next to the contract and run compact-xray check in CI">⬇ Privacy policy (.xray.json)</button>
+      <button id="cpMd" title="For a pull request comment">⧉ Copy Markdown</button>
+    </div>`}
+    ${plainHtml(x)}
+    <div class="tabs">${tabs.map((t) => `<button class="tab ${t === circuitFilter ? 'on' : ''}" data-c="${esc(t)}">${esc(t)}${t === 'all' ? '' : `<span class="c">${x.leaks.filter((l) => l.circuit === t).length}</span>`}</button>`).join('')}</div>
+    <div class="legend">${Object.keys(WORDS).map((k) => `<span><i style="background:${COLOR[k]}"></i>${WORDS[k] === 'decision' ? 'a decision based on it' : WORDS[k] === 'derived' ? 'something derived from it' : WORDS[k] === 'hash' ? 'a hash of it' : 'its exact value'}</span>`).join('')}</div>
+    <div class="map" id="map">
+      <div class="col" id="srcCol"><h3>Private</h3>
+        ${[...sources.entries()].map(([k, l]) => `<div class="node private" data-k="${esc(k)}">${esc(srcLabel(l))}<small>${esc(srcSub(l))}</small></div>`).join('') || '<div class="hint">nothing private reaches the public side</div>'}
+      </div>
+      <div></div>
+      <div class="col" id="sinkCol"><h3>Public</h3>
+        ${[...sinks.entries()].map(([k, l]) => l.sink.kind === 'stdlib'
+          ? `<div class="node public token" data-k="${esc(k)}">${esc(l.sink.call)}()<small>token operation</small></div>`
+          : l.sink.kind === 'return'
+          ? `<div class="node public ret" data-k="${esc(k)}">${esc(l.circuit)} ⏎<small>returned to the caller · not on chain</small></div>`
+          : `<div class="node public" data-k="${esc(k)}">${esc(l.sink.field || '(ledger)')}<small>ledger field</small></div>`).join('')}
+        ${circuitFilter === 'all' ? quietFields.map((fd) => `<div class="node public safe">${esc(fd.name)}<small>ledger field${fd.sealed ? ' · sealed' : ''} · no private input</small></div>`).join('') : ''}
+      </div>
+      <svg class="wires" id="wires"></svg>
+    </div>
+    ${x.advice.length ? `<section><h2>Advice</h2>${x.advice.map((a) => `<div class="advice ${a.severity}"><b>${md(a.title)}</b><p>${md(a.detail)}</p>${a.lines.length ? `<div class="l" data-lines="${a.lines.join(',')}">line ${a.lines.join(', ')}</div>` : ''}</div>`).join('')}</section>` : ''}
+    <section><h2>What becomes public, circuit by circuit</h2>${circuitsHtml(x, leaks)}</section>
+    ${stays.length ? `<section><h2>Stays private</h2><div class="private-list">${stays.map((s) => `<span>✓ ${esc(s)}</span>`).join('')}</div>
+      <p class="hint">Never reaches the public side in any form the compiler tracks. Values hidden inside <code>persistentCommit</code> are by design not reported.</p></section>` : ''}
+    <footer>Returned values go back to the calling DApp; on a local Midnight network (ledger 8) we measured that they are not in the published transaction. · Findings: <code>compact compile</code> ${esc(x.compiler)} with every <code>disclose()</code> removed.</footer>`;
+
+  if (!window.__XRAY__) {
+    $('#dlHtml').onclick = downloadHtml;
+    $('#dlPolicy').onclick = () => download('.xray.json', JSON.stringify(x.policy, null, 2) + '\n', 'application/json');
+    $('#cpMd').onclick = async (e) => { await navigator.clipboard.writeText(x.markdown); e.target.textContent = '✓ Copied'; setTimeout(() => (e.target.textContent = '⧉ Copy Markdown'), 1500); };
+  }
+  for (const b of document.querySelectorAll('.tab')) b.onclick = () => { circuitFilter = b.dataset.c; render(); };
+  for (const el of document.querySelectorAll('[data-lines]')) el.onclick = () => focusLines(el.dataset.lines.split(',').map(Number));
+  showCode(x, leaks);
+  current._flows = [...flows.values()];
+  requestAnimationFrame(drawWires);
+  for (const n of document.querySelectorAll('#map .node[data-k]')) {
+    n.onmouseenter = () => highlight(n.dataset.k);
+    n.onmouseleave = () => highlight(null);
+  }
+}
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function downloadHtml() {
+  // Same embedding as `compact-xray --format html`: the page renders the data with no server.
+  const page = (await fetch(location.pathname).then((r) => r.text())).replace(/<script>window\.XRAY_CONFIG[^<]*<\/script>\n?/, '');
+  const data = JSON.stringify({ ...current, _flows: undefined }).replace(/</g, '\\u003c');
+  const html = page.replace('<script>', `<script>window.__XRAY__ = ${data};<\/script>\n<script>`);
+  download(`${current.file.replace(/\.compact$/, '')}-xray.html`, html, 'text/html');
+}
+
+// Public-facing sentences first; long contracts keep the rest one click away.
+function plainHtml(x) {
+  const all = (x.plain || []).filter((p) => circuitFilter === 'all' || p.circuit === circuitFilter)
+    .sort((a, b) => (a.tone === 'public' ? 0 : 1) - (b.tone === 'public' ? 0 : 1));
+  if (!all.length) return '';
+  const row = (p) => `<p class="${p.tone}">${md(p.text)}</p>`;
+  const head = all.slice(0, 4).map(row).join('');
+  const rest = all.slice(4);
+  return `<section class="plain"><h2>In plain words</h2>${head}${rest.length ? `<details><summary>${rest.length} more</summary>${rest.map(row).join('')}</details>` : ''}</section>`;
+}
+
+function md(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>'); }
+
+function circuitsHtml(x, leaks) {
+  const shown = x.circuits.filter((c) => (c.exported || c.leaks) && (circuitFilter === 'all' || c.name === circuitFilter));
+  return shown.map((c) => {
+    const mine = leaks.filter((l) => l.circuit === c.name);
+    const groups = new Map();
+    for (const l of mine) {
+      const k = `${srcKey(l)}|${sinkKey(l)}|${l.exposure}|${l.sink.reveals || ''}`;
+      const g = groups.get(k) || { l, lines: new Set() };
+      g.lines.add(l.sink.line); groups.set(k, g);
+    }
+    const rows = [...groups.values()].sort((a, b) => RANK[a.l.exposure] - RANK[b.l.exposure]).map(({ l, lines }) => {
+      const where = l.sink.kind === 'stdlib' ? `${l.sink.call}() — reveals ${l.sink.reveals}` : l.sink.kind === 'return' ? 'returned to the caller (not in the transaction)' : `ledger <code>${esc(l.sink.field || '?')}</code>`;
+      const steps = (l.path || []).filter((p) => p.at);
+      const trail = steps.length > 1 ? `<div class="trail">${steps.map((p) => `<span data-l="${p.at.line}">${esc(p.step.replace(/^the /, ''))} <i>L${p.at.line}</i></span>`).join('<b>→</b>')}</div>` : '';
+      return `<div class="flow" data-lines="${[...lines].join(',')}"><span class="what">${esc(srcLabel(l))}</span><span class="where">→ ${l.sink.kind === 'stdlib' ? esc(where) : where}<span class="pill ${l.exposure}">${WORDS[l.exposure]}</span></span><span class="lines">L${[...lines].join(', L')}</span>${trail}</div>`;
+    }).join('');
+    return `<div class="circuit"><header>${esc(c.name)}<span>${c.exported ? (c.pure ? 'pure' : '') : 'helper — runs inside the circuits that call it'}</span></header>${rows || '<div class="none">✓ nothing private reaches the public side</div>'}</div>`;
+  }).join('');
+}
+
+function showCode(x, leaks) {
+  const marks = new Map();
+  for (const l of leaks) {
+    const prev = marks.get(l.sink.line);
+    if (!prev || RANK[l.exposure] < RANK[prev]) marks.set(l.sink.line, l.exposure);
+  }
+  // With "check every disclose()": lines whose disclose() the compiler does not require.
+  const extra = new Set((x.discloses || []).filter((d) => !d.needed).map((d) => d.line));
+  $('#view').innerHTML = x.source.split('\n').map((t, i) =>
+    `<div class="ln ${marks.has(i + 1) ? 'mark-' + marks.get(i + 1) : ''} ${extra.has(i + 1) ? 'extra' : ''}" id="L${i + 1}"><span class="n">${i + 1}</span><span><span class="t">${esc(t) || ' '}</span>${extra.has(i + 1) ? '<span class="tag">disclose() not required</span>' : ''}</span></div>`).join('');
+  $('#view').hidden = false; $('#src').hidden = true; $('#edit').hidden = !!window.__XRAY__;
+}
+
+function focusLines(lines) {
+  for (const el of document.querySelectorAll('.ln.focus')) el.classList.remove('focus');
+  lines.forEach((n, i) => { const el = document.getElementById('L' + n); if (el) { el.classList.add('focus'); if (i === 0) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } });
+}
+// Click a finding: jump to its lines and unfold the path the compiler traced. Click a step: jump there.
+document.addEventListener('click', (e) => {
+  const step = e.target.closest('.trail span');
+  if (step) { focusLines([Number(step.dataset.l)]); return; }
+  const f = e.target.closest('.flow');
+  if (f) { f.classList.toggle('open'); focusLines(f.dataset.lines.split(',').map(Number)); }
+});
+
+function drawWires() {
+  const map = $('#map'), svg = $('#wires');
+  if (!map || !svg || !current._flows) return;
+  const box = map.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+  const anchor = (k, side) => {
+    const n = map.querySelector(`.node[data-k="${CSS.escape(k)}"]`);
+    if (!n) return null;
+    const r = n.getBoundingClientRect();
+    return { x: (side === 'r' ? r.right : r.left) - box.left, y: r.top + r.height / 2 - box.top };
+  };
+  svg.innerHTML = current._flows.sort((a, b) => RANK[b.l.exposure] - RANK[a.l.exposure]).map((f) => {
+    const a = anchor(srcKey(f.l), 'r'), b = anchor(sinkKey(f.l), 'l');
+    if (!a || !b) return '';
+    const mx = (a.x + b.x) / 2;
+    const w = Math.min(6, 1.6 + f.lines.size * 0.8);
+    return `<path data-s="${esc(srcKey(f.l))}" data-t="${esc(sinkKey(f.l))}" d="M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}" stroke="${COLOR[f.l.exposure]}" stroke-width="${w}"/>`;
+  }).join('');
+}
+
+function highlight(k) {
+  for (const p of document.querySelectorAll('#wires path')) p.classList.toggle('dim', !!k && p.dataset.s !== k && p.dataset.t !== k);
+  const linked = new Set();
+  if (k) for (const p of document.querySelectorAll('#wires path')) if (p.dataset.s === k || p.dataset.t === k) { linked.add(p.dataset.s); linked.add(p.dataset.t); }
+  for (const n of document.querySelectorAll('#map .node[data-k]')) n.classList.toggle('dim', !!k && !linked.has(n.dataset.k));
+}
+
+boot();
+</script>
+</body>
+</html>

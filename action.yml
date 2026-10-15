@@ -1,0 +1,77 @@
+name: Compact X-Ray
+description: Fail a pull request when a Midnight Compact contract starts making a private value public.
+author: compact-xray
+branding:
+  icon: eye
+  color: purple
+
+inputs:
+  contracts:
+    description: Contract files to x-ray (space-separated paths or shell globs).
+    required: true
+  compact-version:
+    description: Compact toolchain to compile with. Pin it to the version your contracts target.
+    default: '0.31.1'
+  fail-on:
+    description: Also fail on advice of this severity (warning | notice | never).
+    default: warning
+  sarif:
+    description: Write a SARIF file here for github/codeql-action/upload-sarif ('' to skip).
+    default: compact-xray.sarif
+
+outputs:
+  sarif:
+    description: Path of the SARIF file, when written.
+    value: ${{ steps.run.outputs.sarif }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install the Compact toolchain
+      shell: bash
+      run: |
+        curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        export PATH="$HOME/.local/bin:$PATH"
+        compact update "${{ inputs.compact-version }}"
+        compact compile --version
+
+    - name: Install compact-xray
+      shell: bash
+      run: npm ci --prefix "${{ github.action_path }}" --no-audit --no-fund
+
+    - name: X-ray the contracts
+      id: run
+      shell: bash
+      env:
+        XRAY: ${{ github.action_path }}/node_modules/.bin/tsx ${{ github.action_path }}/src/cli.ts
+      run: |
+        shopt -s globstar nullglob
+        status=0
+        sarifs=()
+        for f in ${{ inputs.contracts }}; do
+          dir=$(dirname "$f")
+          if [ -f "$dir/.xray.json" ]; then cmd=check; else cmd=report; fi
+          args=()
+          [ "$cmd" = report ] || args+=(check)
+          $XRAY "${args[@]}" "$f" --format md --fail-on "${{ inputs.fail-on }}" >> "$GITHUB_STEP_SUMMARY" || status=1
+          echo >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ inputs.sarif }}" ]; then
+            out="$RUNNER_TEMP/xray-$(echo "$f" | tr '/' '_').sarif"
+            $XRAY "${args[@]}" "$f" --format sarif --out "$out" --fail-on never || true
+            sarifs+=("$out")
+          fi
+        done
+        if [ -n "${{ inputs.sarif }}" ] && [ ${#sarifs[@]} -gt 0 ]; then
+          node -e '
+            const fs = require("fs"); const [out, ...ins] = process.argv.slice(1);
+            const docs = ins.map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
+            const merged = docs[0]; merged.runs[0].results = docs.flatMap((d) => d.runs[0].results);
+            fs.writeFileSync(out, JSON.stringify(merged, null, 2));' "${{ inputs.sarif }}" "${sarifs[@]}"
+          echo "sarif=${{ inputs.sarif }}" >> "$GITHUB_OUTPUT"
+        fi
+        exit $status

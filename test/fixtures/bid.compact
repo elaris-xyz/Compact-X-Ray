@@ -1,0 +1,49 @@
+pragma language_version 0.23;
+import CompactStandardLibrary;
+
+export sealed ledger minimumBid: Uint<64>;
+export ledger commitments: Map<Bytes<32>, Bytes<32>>;
+export ledger revealed: Map<Bytes<32>, Uint<64>>;
+export ledger pinHashes: Set<Bytes<32>>;
+export ledger saltedPins: Set<Bytes<32>>;
+export ledger status: Uint<8>;
+
+witness secretKey(): Bytes<32>;
+
+constructor(minimum: Uint<64>) {
+  minimumBid = disclose(minimum);
+}
+
+circuit bidderKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "bid:key:"), sk]);
+}
+
+export circuit placeBid(amount: Uint<64>, salt: Bytes<32>): [] {
+  assert(amount >= minimumBid, "below minimum");
+  const who = disclose(bidderKey(secretKey()));
+  commitments.insert(who, persistentCommit<Uint<64>>(amount, salt));
+}
+
+export circuit reveal(amount: Uint<64>): [] {
+  revealed.insert(disclose(bidderKey(secretKey())), disclose(amount));
+}
+
+// A 4-digit PIN hashed on its own: anyone can try all 65536 values.
+export circuit weakPin(pin: Uint<16>): [] {
+  pinHashes.insert(disclose(persistentHash<Uint<16>>(pin)));
+}
+
+// The same PIN hashed together with a 32-byte secret: not guessable.
+export circuit strongPin(pin: Uint<16>): [] {
+  saltedPins.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([secretKey(), persistentHash<Uint<16>>(pin)])));
+}
+
+// Which branch runs depends on a secret, and each branch writes the ledger.
+export circuit branch(): [] {
+  if (disclose(secretKey() == pad(32, "x"))) { status = 1; } else { status = 2; }
+}
+
+// Returning a witness value: the compiler asks for disclose(); the value goes back to the caller.
+export circuit peek(): Bytes<32> {
+  return disclose(secretKey());
+}

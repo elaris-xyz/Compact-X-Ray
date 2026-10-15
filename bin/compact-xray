@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Launcher: run the X-Ray CLI from this checkout, whatever the current directory.
+# Loads nvm when present (WSL / Linux setups) and puts ~/.local/bin (where `compact` installs) on PATH.
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" >/dev/null
+export PATH="$HOME/.local/bin:$PATH"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$here/node_modules/.bin/tsx" "$here/src/cli.ts" "$@"

@@ -1,0 +1,33 @@
+pragma language_version 0.23;
+import CompactStandardLibrary;
+
+export ledger owner: ZswapCoinPublicKey;
+export ledger ownerHash: Bytes<32>;
+export ledger votes: Set<Bytes<32>>;
+
+witness secretKey(): Bytes<32>;
+
+constructor() {
+  owner = ownPublicKey();
+  ownerHash = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "rules:owner"), secretKey()]));
+}
+
+// Unsafe: anyone can claim to be `owner`.
+export circuit adminOnly(): [] {
+  assert(ownPublicKey() == owner, "not the owner");
+}
+
+// Safe: proves knowledge of the owner's secret.
+export circuit adminProper(): [] {
+  assert(ownerHash == persistentHash<Vector<2, Bytes<32>>>([pad(32, "rules:owner"), secretKey()]), "not the owner");
+}
+
+// A commitment with a constant salt is a plain hash of a 1-bit value.
+export circuit vote(choice: Boolean): [] {
+  votes.insert(persistentCommit<Boolean>(choice, pad(32, "")));
+}
+
+// disclose() inside an assert is not required by the compiler.
+export circuit check(x: Uint<64>): [] {
+  assert(disclose(x) > 3, "too small");
+}
