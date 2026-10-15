@@ -1,16 +1,22 @@
-// Compact X-Ray for VS Code: runs the CLI on save and shows its findings in the editor.
+// Compact X-Ray for VS Code: shows, in the editor, what a Midnight Compact contract makes public.
 //   - diagnostics: each disclosure on its line (information), advice (warning/information)
 //   - code lens above each circuit: what it publishes
-//   - status bar: counts; click for the visual report (the CLI's HTML in a webview)
+//   - status bar: counts; click for the visual report (the X-Ray page in a webview)
+//
+// Two engines, same analysis:
+//   local  — the compact-xray CLI with the Compact compiler on this machine (compactXray.command)
+//   online — the hosted service (compactXray.onlineUrl), so the extension works with no setup.
+//            The contract text is sent to it; the user is asked once before that happens.
+// "auto" (the default) uses local when the CLI answers, online otherwise.
 'use strict';
 const vscode = require('vscode');
 const { exec } = require('node:child_process');
-const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 
 const WORD = { value: 'exact value', hash: 'hash', comparison: 'decision', derived: 'derived' };
-const results = new Map(); // uri -> xray JSON
+const results = new Map(); // uri -> x-ray result
+let localWorks; // undefined until probed
 
 function cfg() {
   return vscode.workspace.getConfiguration('compactXray');
@@ -29,14 +35,75 @@ function quote(s) {
 }
 
 /** Run the CLI; resolves with stdout even on exit code 1 (findings), rejects on tool errors. */
-function runCli(args) {
+function runCli(args, timeout = 300_000) {
   return new Promise((resolve, reject) => {
     const cmd = `${cfg().get('command')} ${args.map(quote).join(' ')}`;
-    exec(cmd, { maxBuffer: 64 * 1024 * 1024, timeout: 300_000, windowsHide: true }, (err, stdout, stderr) => {
+    exec(cmd, { maxBuffer: 64 * 1024 * 1024, timeout, windowsHide: true }, (err, stdout, stderr) => {
       if (err && err.code !== 1) return reject(new Error((stderr || err.message).trim().slice(0, 500)));
       resolve(stdout);
     });
   });
+}
+
+async function engine(ctx) {
+  const want = cfg().get('engine');
+  if (want === 'local' || want === 'online') return want;
+  if (localWorks === undefined) {
+    localWorks = await runCli(['--version'], 20_000).then((v) => /\d+\.\d+/.test(v), () => false);
+  }
+  return localWorks ? 'local' : 'online';
+}
+
+/** Ask once before any contract leaves the machine. */
+async function onlineAllowed(ctx) {
+  if (ctx.state.get('onlineConsent') === true) return true;
+  const url = cfg().get('onlineUrl');
+  const pick = await vscode.window.showInformationMessage(
+    `Compact X-Ray has no local compiler, so it can analyse this contract with the online service (${new URL(url).host}). The contract text is sent there to be compiled; nothing is stored.`,
+    { modal: true },
+    'Allow',
+  );
+  if (pick !== 'Allow') return false;
+  await ctx.state.update('onlineConsent', true);
+  return true;
+}
+
+/** The contract and the other .compact files next to it (it may import them). */
+function projectFiles(doc) {
+  const dir = path.dirname(doc.fileName);
+  const open = new Map(vscode.workspace.textDocuments.map((d) => [d.fileName, d.getText()]));
+  const others = [];
+  try {
+    for (const n of fs.readdirSync(dir)) {
+      const p = path.join(dir, n);
+      if (!n.endsWith('.compact') || p === doc.fileName) continue;
+      others.push({ name: n, source: open.get(p) ?? fs.readFileSync(p, 'utf8') });
+      if (others.length >= 31) break;
+    }
+  } catch { /* an unsaved file has no directory to read */ }
+  return { main: { name: path.basename(doc.fileName), source: doc.getText() }, others };
+}
+
+async function xrayOnline(doc, deep) {
+  const { main, others } = projectFiles(doc);
+  const r = await fetch(cfg().get('onlineUrl'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: main.name, source: main.source, files: others, deep }),
+  });
+  const x = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok) throw new Error(x.error || `HTTP ${r.status}`);
+  return x;
+}
+
+async function xray(doc, ctx, deep = false) {
+  if ((await engine(ctx)) === 'local') {
+    const args = [toCliPath(doc.fileName), '--format', 'json'];
+    if (deep) args.push('--deep');
+    return { ...JSON.parse(await runCli(args)), source: doc.getText() };
+  }
+  if (!(await onlineAllowed(ctx))) throw new Error('analysis cancelled (no local compiler, online not allowed). Set compactXray.command to use a local one.');
+  return xrayOnline(doc, deep);
 }
 
 function sourceName(l) {
@@ -103,15 +170,14 @@ async function analyze(doc, ctx, deep = false) {
   ctx.status.text = '$(sync~spin) X-Ray';
   ctx.status.show();
   try {
-    const args = [toCliPath(doc.fileName), '--format', 'json'];
-    if (deep) args.push('--deep');
-    const x = JSON.parse(await runCli(args));
+    const x = await xray(doc, ctx, deep);
     results.set(doc.uri.toString(), x);
     publish(doc, x, ctx.diagnostics);
     ctx.lenses.changed.fire();
     const warnings = x.advice.filter((a) => a.severity === 'warning').length;
     ctx.status.text = `$(eye) X-Ray: ${x.leaks.length} disclosure${x.leaks.length === 1 ? '' : 's'}${warnings ? `, $(warning) ${warnings}` : ''}`;
-    ctx.status.tooltip = 'Compact X-Ray — click for the visual report';
+    ctx.status.tooltip = `Compact X-Ray (${localWorks ? 'local compiler' : 'online'}) — click for the visual report`;
+    return x;
   } catch (e) {
     ctx.status.text = '$(error) X-Ray';
     ctx.status.tooltip = String(e.message);
@@ -119,18 +185,36 @@ async function analyze(doc, ctx, deep = false) {
   }
 }
 
+/** The X-Ray page with this result embedded, as the CLI's --format html does. */
+function reportHtml(x) {
+  const bundled = path.join(__dirname, 'media', 'report.html');
+  const page = fs.readFileSync(fs.existsSync(bundled) ? bundled : path.join(__dirname, '..', 'web', 'index.html'), 'utf8');
+  const data = JSON.stringify(x).replace(/</g, '\\u003c');
+  return page.replace('<script>', `<script>window.__XRAY__ = ${data};</script>\n<script>`);
+}
+
 async function openReport(ctx) {
   const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
   if (!doc || !doc.fileName.endsWith('.compact')) return vscode.window.showInformationMessage('Open a .compact file first.');
-  const out = path.join(os.tmpdir(), `xray-${Date.now()}.html`);
+  const x = results.get(doc.uri.toString()) ?? (await analyze(doc, ctx));
+  if (!x) return;
+  const panel = vscode.window.createWebviewPanel('compactXray', `X-Ray: ${path.basename(doc.fileName)}`, vscode.ViewColumn.Beside, { enableScripts: true });
+  panel.webview.html = reportHtml({ ...x, file: path.basename(doc.fileName) });
+}
+
+async function initPolicy(ctx) {
+  const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+  if (!doc || !doc.fileName.endsWith('.compact')) return;
   try {
-    await runCli([toCliPath(doc.fileName), '--format', 'html', '--out', toCliPath(out)]);
-    const panel = vscode.window.createWebviewPanel('compactXray', `X-Ray: ${path.basename(doc.fileName)}`, vscode.ViewColumn.Beside, { enableScripts: true });
-    panel.webview.html = fs.readFileSync(out, 'utf8');
-    fs.rmSync(out, { force: true });
-  } catch (e) {
-    vscode.window.showErrorMessage(`Compact X-Ray: ${e.message}`);
-  }
+    if ((await engine(ctx)) === 'local') {
+      await runCli(['init', toCliPath(doc.fileName)]);
+    } else {
+      const x = await analyze(doc, ctx);
+      if (!x?.policy) return;
+      fs.writeFileSync(path.join(path.dirname(doc.fileName), '.xray.json'), `${JSON.stringify(x.policy, null, 2)}\n`);
+    }
+    vscode.window.showInformationMessage('Compact X-Ray: wrote .xray.json next to the contract. Review and commit it.');
+  } catch (e) { vscode.window.showErrorMessage(`Compact X-Ray: ${e.message}`); }
 }
 
 function activate(context) {
@@ -138,6 +222,7 @@ function activate(context) {
     diagnostics: vscode.languages.createDiagnosticCollection('compact-xray'),
     status: vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50),
     lenses: new Lenses(),
+    state: context.globalState,
   };
   ctx.status.command = 'compactXray.report';
   const active = () => vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
@@ -147,20 +232,14 @@ function activate(context) {
     vscode.commands.registerCommand('compactXray.analyze', () => analyze(active(), ctx)),
     vscode.commands.registerCommand('compactXray.deep', () => analyze(active(), ctx, true)),
     vscode.commands.registerCommand('compactXray.report', () => openReport(ctx)),
-    vscode.commands.registerCommand('compactXray.initPolicy', async () => {
-      const doc = active();
-      if (!doc) return;
-      try {
-        await runCli(['init', toCliPath(doc.fileName)]);
-        vscode.window.showInformationMessage('Compact X-Ray: wrote .xray.json next to the contract. Review and commit it.');
-      } catch (e) { vscode.window.showErrorMessage(`Compact X-Ray: ${e.message}`); }
-    }),
+    vscode.commands.registerCommand('compactXray.initPolicy', () => initPolicy(ctx)),
     vscode.workspace.onDidSaveTextDocument((doc) => cfg().get('runOnSave') && analyze(doc, ctx)),
     vscode.workspace.onDidCloseTextDocument((doc) => { ctx.diagnostics.delete(doc.uri); results.delete(doc.uri.toString()); }),
+    vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('compactXray')) localWorks = undefined; }),
   );
   if (active()) analyze(active(), ctx);
 }
 
 function deactivate() {}
 
-module.exports = { activate, deactivate };
+module.exports = { activate, deactivate, _test: { projectFiles, reportHtml, resetEngine: () => { localWorks = undefined; } } };

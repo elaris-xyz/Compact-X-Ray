@@ -9,6 +9,7 @@ import { renderHtml } from './report-html.ts';
 import { renderMarkdown } from './report-md.ts';
 import { renderSarif } from './report-sarif.ts';
 import { renderText } from './report-text.ts';
+import { explain } from './explain.ts';
 
 const VERSION = (JSON.parse(readFileSync(path.resolve(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string }).version;
 
@@ -68,7 +69,7 @@ function emit(opts: Opts, text: string) {
 
 function render(x: Xray, opts: Opts, extra: { check?: PolicyCheck; diff?: Diff } = {}): string {
   switch (opts.format) {
-    case 'json': return JSON.stringify({ ...x, ...extra }, null, 2);
+    case 'json': return JSON.stringify({ ...x, plain: explain(x), policy: policyFrom(x), ...extra }, null, 2);
     case 'md': case 'markdown': return renderMarkdown(x, extra);
     case 'sarif': return renderSarif(x, extra.check, VERSION);
     case 'html': return renderHtml({ ...x, source: readFileSync(x.file, 'utf8') });

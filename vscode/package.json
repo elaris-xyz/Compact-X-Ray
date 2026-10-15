@@ -1,13 +1,24 @@
 {
   "name": "compact-xray",
   "displayName": "Compact X-Ray",
-  "description": "See, line by line, what a Midnight Compact contract makes public — from the compiler itself.",
-  "version": "0.1.0",
+  "description": "See, line by line, what a Midnight Compact contract makes public — from the compiler itself. Works out of the box (online), or with your local compiler.",
+  "version": "0.2.0",
   "publisher": "compact-xray",
   "license": "Apache-2.0",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Linters", "Visualization"],
-  "keywords": ["midnight", "compact", "zero-knowledge", "privacy", "disclose"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Visualization"
+  ],
+  "keywords": [
+    "midnight",
+    "compact",
+    "zero-knowledge",
+    "privacy",
+    "disclose"
+  ],
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:compact",
@@ -15,14 +26,46 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "compactXray.analyze", "title": "Compact X-Ray: Analyze this contract" },
-      { "command": "compactXray.report", "title": "Compact X-Ray: Open visual report" },
-      { "command": "compactXray.deep", "title": "Compact X-Ray: Check every disclose()" },
-      { "command": "compactXray.initPolicy", "title": "Compact X-Ray: Write privacy policy (.xray.json)" }
+      {
+        "command": "compactXray.analyze",
+        "title": "Compact X-Ray: Analyze this contract"
+      },
+      {
+        "command": "compactXray.report",
+        "title": "Compact X-Ray: Open visual report"
+      },
+      {
+        "command": "compactXray.deep",
+        "title": "Compact X-Ray: Check every disclose()"
+      },
+      {
+        "command": "compactXray.initPolicy",
+        "title": "Compact X-Ray: Write privacy policy (.xray.json)"
+      }
     ],
     "configuration": {
       "title": "Compact X-Ray",
       "properties": {
+        "compactXray.engine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "local",
+            "online"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Local compiler when the CLI answers, otherwise the online service",
+            "Always the local CLI (compactXray.command)",
+            "Always the online service (compactXray.onlineUrl)"
+          ],
+          "description": "Where contracts are compiled. Online sends the contract text to the service (you are asked once)."
+        },
+        "compactXray.onlineUrl": {
+          "type": "string",
+          "default": "https://compact-x-ray.vercel.app/api/xray",
+          "description": "The online X-Ray service."
+        },
         "compactXray.command": {
           "type": "string",
           "default": "compact-xray",
@@ -33,14 +76,31 @@
           "default": false,
           "description": "Translate Windows paths (C:\\…) to WSL paths (/mnt/c/…) when calling the command."
         },
-        "compactXray.runOnSave": { "type": "boolean", "default": true, "description": "Analyze .compact files when they are saved." },
+        "compactXray.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyze .compact files when they are saved."
+        },
         "compactXray.showDisclosures": {
           "type": "boolean",
           "default": true,
           "description": "Show every disclosure as an information diagnostic on its line (advice is always shown)."
         },
-        "compactXray.codeLens": { "type": "boolean", "default": true, "description": "Show what each circuit publishes above its declaration." }
+        "compactXray.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show what each circuit publishes above its declaration."
+        }
       }
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elaris-xyz/Compact-X-Ray"
+  },
+  "homepage": "https://compact-x-ray.vercel.app",
+  "scripts": {
+    "vscode:prepublish": "node build.mjs",
+    "package": "node build.mjs && npx -y @vscode/vsce@3 package --allow-missing-repository"
   }
 }

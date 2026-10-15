@@ -143,10 +143,13 @@ From the page you can download the report as one self-contained HTML file (the s
 
 ### VS Code
 
-`vscode/` holds an extension (`npx @vscode/vsce package` → `compact-xray-0.1.0.vsix`). On every save
-it marks each line where a private value goes public, shows advice as warnings, puts a code lens
-above each circuit (`🩻 publishes amount (exact value) → revealedBids`), and opens the visual report
-beside the code. It calls the CLI through `bin/compact-xray`; see `vscode/README.md` for WSL setups.
+Download `compact-xray-<version>.vsix` from the
+[latest release](https://github.com/elaris-xyz/Compact-X-Ray/releases/latest) and install it
+(Extensions view → `…` → **Install from VSIX…**). On every save it marks each line where a private
+value goes public, shows advice as warnings, puts a code lens above each circuit
+(`🩻 publishes amount (exact value) → revealedBids`), and opens the visual report beside the code.
+It works out of the box through the online service (asking once before sending a contract), or with
+your local compiler: see [`vscode/README.md`](vscode/README.md).
 
 ### The website
 
