@@ -158,15 +158,21 @@ function publish(doc, x, diagnostics) {
     return;
   }
   if (cfg().get('showDisclosures')) {
-    const seen = new Set();
+    // One entry per line and per way of leaking: "num1 and num2 → result (result of an addition)".
+    const groups = new Map();
     for (const l of x.leaks) {
-      const msg = `Public: ${sourceName(l)} → ${sinkName(l)} (${how(l)})${l.sink.reveals ? ` — reveals ${l.sink.reveals}` : ''}`;
-      const key = `${l.sink.line}|${msg}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const key = `${l.sink.line}|${sinkName(l)}|${how(l)}|${l.sink.reveals || ''}`;
+      const g = groups.get(key) || { l, names: [], steps: new Map() };
+      if (!g.names.includes(sourceName(l))) g.names.push(sourceName(l));
+      for (const p of l.path || []) if (p.at) g.steps.set(`${p.at.line}|${p.step}`, p);
+      groups.set(key, g);
+    }
+    for (const { l, names, steps } of groups.values()) {
+      const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+      const msg = `Public: ${who} → ${sinkName(l)} (${how(l)})${l.sink.reveals ? ` — reveals ${l.sink.reveals}` : ''}`;
       const d = new vscode.Diagnostic(lineRange(doc, l.sink.line), msg, vscode.DiagnosticSeverity.Information);
       d.source = 'compact-xray';
-      d.relatedInformation = (l.path || []).filter((p) => p.at).map((p) =>
+      d.relatedInformation = [...steps.values()].map((p) =>
         new vscode.DiagnosticRelatedInformation(new vscode.Location(doc.uri, lineRange(doc, p.at.line)), p.step));
       out.push(d);
     }

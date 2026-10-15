@@ -153,3 +153,26 @@ test('a contract pasted into an Untitled tab is recognised and analysed, with ei
   }
   fakeVscode.window.activeTextEditor = { document: doc };
 });
+
+test('one diagnostic per line for values that leak the same way', async () => {
+  const calc = path.join(root, 'examples', 'calculator.compact');
+  const t = readFileSync(calc, 'utf8');
+  const ls = t.split('\n');
+  const calcDoc = {
+    ...doc,
+    fileName: calc,
+    uri: { scheme: 'file', toString: () => `file://${calc}` },
+    lineCount: ls.length,
+    getText: () => t,
+    lineAt: (i: number) => ({ text: ls[i] ?? '', firstNonWhitespaceCharacterIndex: (ls[i] ?? '').search(/\S|$/) }),
+  };
+  settings.engine = 'local';
+  ext._test.resetEngine();
+  fakeVscode.window.activeTextEditor = { document: calcDoc };
+  await commands.get('compactXray.analyze')!();
+  const diags = collections[0]!.get(`file://${calc}`)!;
+  const add = diags.filter((d) => d.message.includes('result of an addition'));
+  assert.equal(add.length, 1, add.map((d) => d.message).join('\n'));
+  assert.equal(add[0]!.message, 'Public: num1 and num2 → result (result of an addition)');
+  fakeVscode.window.activeTextEditor = { document: doc };
+});
