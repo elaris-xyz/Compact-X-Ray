@@ -32,10 +32,10 @@ function limited(req) {
 
 export default async function handler(req, res) {
   res.setHeader('cache-control', 'no-store');
-  if (process.env.XRAY_CORS) {
-    res.setHeader('access-control-allow-origin', process.env.XRAY_CORS);
-    res.setHeader('access-control-allow-headers', 'content-type');
-  }
+  // The GitHub Pages site calls this API cross-origin; XRAY_CORS overrides the allowed origin.
+  res.setHeader('access-control-allow-origin', process.env.XRAY_CORS ?? 'https://elaris-xyz.github.io');
+  res.setHeader('access-control-allow-headers', 'content-type');
+  res.setHeader('vary', 'origin');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST a contract to /api/xray' });
   if (limited(req)) return res.status(429).json({ error: 'too many requests, try again in a minute' });
